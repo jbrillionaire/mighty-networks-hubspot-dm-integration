@@ -2,8 +2,8 @@
   README.md -- Mighty Networks + HubSpot DM integration
   Author:  Jibril Sulaiman
   Created: 2026-09-28
-  What:    The complete guide to this repo, starting with its first module:
-           sending direct messages to members through the Mighty API.
+  What:    What this integration is for, and the full guide to the Node
+           DM sender. The HubSpot sync's guide is apps-script/dm-sync/README.md.
   Why:     The Mighty API sends every DM as a real person, never as "the
            brand". Most mistakes here are quiet ones: a DM that is skipped
            but counted as sent, a batch re-run that messages people twice,
@@ -12,15 +12,55 @@
 
 # Mighty Networks + HubSpot DM integration
 
-Working code and setup guides for the [Mighty Networks](https://www.mightynetworks.com/)
-**Mighty API**, the GraphQL API that combines the Member and Admin APIs.
+Handle [Mighty Networks](https://www.mightynetworks.com/) direct messages from
+HubSpot. When a member DMs your community's Host account, the message shows up
+on that member's HubSpot contact. When someone on your team types a reply in
+HubSpot, it's delivered to the member as a Mighty DM from the Host account.
+You can also send one-off or bulk DMs from a list.
 
-| Module | Status | What it does |
+## Why it exists
+
+Member conversations in Mighty live in one person's inbox, cut off from the CRM
+where your team tracks everyone else. That creates three problems:
+
+- **Nobody else can see them.** A member asks about renewing, a refund or a class,
+  and only whoever is logged in as the Host knows. Nothing reaches the contact
+  record, reporting or follow-up workflows.
+- **Replying means another login.** Staff who work in HubSpot have to switch into
+  Mighty, as the right account, to answer.
+- **Mighty doesn't make it easy to connect.** There's no webhook for DMs, and an API
+  token can only read and send its own user's messages. There's no admin view of
+  every inbox and no way to send "as the brand."
+
+This integration closes that gap within those limits. It signs in once as the
+Host account members already talk to, checks that inbox on a schedule, and sends
+replies as that account.
+
+## What's in it
+
+| Part | What it does | Runs on |
 |---|---|---|
-| [Direct messages](#direct-messages) | Ready | DM one member or a CSV list of members from a Host account (Node) |
-| [DM sync with HubSpot](apps-script/dm-sync/README.md) | Ready | Two-way sync of a Host's DM inbox with HubSpot contacts: new DMs become notes, replies typed in HubSpot are sent as DMs (Google Apps Script) |
+| [DM sync with HubSpot](apps-script/dm-sync/README.md) | **Two-way sync.** Every 15 minutes, new DMs become notes on the member's HubSpot contact and a "last inbound" date is stamped. Every 5 minutes, replies typed into a contact property are sent as DMs, with a note recording what was sent. | Google Apps Script (no server) |
+| [Direct messages](#direct-messages) | **Sending tool.** DM one member, or a CSV list with personalized fields, from a Host account. Dry run by default, resumable, never double-sends. | Node 20+ |
 
-Zero dependencies. The Node module needs Node 20 or newer and runs on your machine or any server you control; the HubSpot sync runs in Google Apps Script.
+```text
+ Member DMs the Host in Mighty ──► every 15 min ──► Note on the HubSpot contact
+ Rep types a reply in HubSpot  ──► every 5 min  ──► DM from the Host in Mighty
+```
+
+**Built to fail safely.** Members notice mistakes in their inbox, so the code is
+defensive where it matters:
+
+- A reply is never sent twice.
+- A DM Mighty declines to deliver, such as when a member has turned off private
+  chat, is reported with the reason instead of counted as sent.
+- Old messages aren't dumped into HubSpot on the first run.
+- Nothing is written or sent until you've confirmed that Mighty members match the
+  right HubSpot contacts.
+
+**Requirements:** a Mighty Network on a plan with OAuth applications (Scale or
+above), a Host account to send from, and for the HubSpot sync, a contact property
+holding each member's Mighty member ID. No other dependencies.
 
 ---
 
