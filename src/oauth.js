@@ -23,6 +23,8 @@
  *   - write:chats always shows the consent screen, even on apps set to skip
  *     it. There is no fully headless first authorization; do it once by hand.
  *   - Any host:* scope means only Network Hosts can finish sign-in.
+ *   - Confidential clients fall back to HTTP Basic client authentication when
+ *     body credentials get a 401 (seen in production).
  */
 
 import { randomBytes, createHash } from 'node:crypto';
@@ -53,13 +55,21 @@ export function buildAuthorizeUrl(config, { state, challenge }) {
 }
 
 async function tokenRequest(config, params, fetchImpl = fetch) {
-  const body = new URLSearchParams({ client_id: config.clientId, ...params });
-  if (config.clientSecret) body.set('client_secret', config.clientSecret); // public clients must NOT send one
-  const res = await fetchImpl(`${config.oauthBase}/token`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': config.userAgent },
-    body,
-  });
+  const post = (useBasic) => {
+    const body = new URLSearchParams({ ...params });
+    const headers = { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': config.userAgent };
+    if (useBasic) {
+      headers.Authorization = `Basic ${Buffer.from(`${config.clientId}:${config.clientSecret}`).toString('base64')}`;
+    } else {
+      body.set('client_id', config.clientId);
+      if (config.clientSecret) body.set('client_secret', config.clientSecret); // public clients must NOT send one
+    }
+    return fetchImpl(`${config.oauthBase}/token`, { method: 'POST', headers, body });
+  };
+  // Mighty's token endpoint has answered invalid_client (401) to credentials in the
+  // body; the same credentials as HTTP Basic then worked. Confidential clients retry.
+  let res = await post(false);
+  if (res.status === 401 && config.clientSecret) res = await post(true);
   const text = await res.text();
   let json;
   try { json = JSON.parse(text); } catch { json = null; }

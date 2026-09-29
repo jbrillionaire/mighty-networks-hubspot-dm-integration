@@ -17,11 +17,12 @@ Working code and setup guides for the [Mighty Networks](https://www.mightynetwor
 
 | Module | Status | What it does |
 |---|---|---|
-| [Direct messages](#direct-messages) | Ready | DM one member or a CSV list of members from a Host account |
+| [Direct messages](#direct-messages) | Ready | DM one member or a CSV list of members from a Host account (Node) |
+| [DM sync with HubSpot](apps-script/dm-sync/README.md) | Ready | Two-way sync of a Host's DM inbox with HubSpot contacts: new DMs become notes, replies typed in HubSpot are sent as DMs (Google Apps Script) |
 
 More modules will be added here as they're built.
 
-Zero dependencies. Node 20 or newer. Runs on your machine or any server you control.
+Zero dependencies. The Node module needs Node 20 or newer and runs on your machine or any server you control; the HubSpot sync runs in Google Apps Script.
 
 ---
 
@@ -472,7 +473,7 @@ you want to review row by row before sending.
 npm test
 ```
 
-21 unit tests with a fake API; nothing is sent to Mighty. They pin the failure
+22 unit tests with a fake API; nothing is sent to Mighty. They pin the failure
 modes that matter: a skipped DM must never count as sent, a re-run must never
 double-message, a half-filled template must never go out, a rotated refresh
 token must be saved, and an auth failure must stop a batch.

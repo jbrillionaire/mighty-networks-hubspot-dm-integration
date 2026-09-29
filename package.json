@@ -8,7 +8,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "test": "node --test test/",
+    "test": "node --test test/ apps-script/dm-sync/tests/",
     "authorize": "node scripts/authorize.js",
     "whoami": "node scripts/whoami.js",
     "check-schema": "node scripts/check-schema.js",

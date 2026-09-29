@@ -222,6 +222,20 @@ test('schema check flags a renamed field and passes a complete schema', () => {
   assert.deepEqual(findMissing(sdl.replace('  memberByEmail: String', '  memberLookupByEmail: String')), ['Network.memberByEmail']);
 });
 
+test('token request retries with HTTP Basic when body credentials get a 401', async () => {
+  const conf = { ...config, clientSecret: 'sec' };
+  const seen = [];
+  const fetchImpl = async (_url, init) => {
+    seen.push({ auth: init.headers.Authorization, secretInBody: init.body.get('client_secret') });
+    return init.headers.Authorization ? jsonRes({ access_token: 'A', refresh_token: 'R', expires_in: 3600 }) : jsonRes({ error: 'invalid_client' }, 401);
+  };
+  const t = await refreshTokens(conf, { refresh_token: 'R0' }, fetchImpl);
+  assert.equal(t.access_token, 'A');
+  assert.equal(seen[0].secretInBody, 'sec');
+  assert.equal(seen[1].auth, `Basic ${Buffer.from('cid:sec').toString('base64')}`);
+  assert.equal(seen[1].secretInBody, null, 'secret not duplicated in the body');
+});
+
 test('.env parser handles comments and quotes', () => {
   assert.deepEqual(parseDotEnv('# c\nA=1\nB="two words"\n\nC=\'x\'\nBAD'), { A: '1', B: 'two words', C: 'x' });
 });
