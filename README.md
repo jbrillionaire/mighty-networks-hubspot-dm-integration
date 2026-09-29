@@ -183,12 +183,14 @@ your team can watch, and you avoid DMing from someone's personal profile.
 
 > **Check:** the application shows those three scopes and the exact redirect URI.
 >
-> **If `write:chats` isn't in the scope list,** your Network can't issue chat tokens
-> to your own applications yet. Mighty has been adding scopes to this screen over
-> time; some Networks have seen only `read:userinfo`, `read:network`,
-> `write:posts` and `write:comments` under Member Scopes. Don't continue: the
-> sends would all fail with `FORBIDDEN`. Ask Mighty support to enable chat scopes,
-> and meanwhile use the Explorer test below to confirm DMs work for your account.
+> **If `write:chats` isn't in the scope list,** don't stop yet. Mighty's docs now
+> say chat needs `read:chats` / `write:chats`, but some Networks' OAuth screens have
+> offered only `read:userinfo`, `read:network`, `write:posts` and `write:comments`
+> under Member Scopes, and reading and replying to DMs has been seen working with
+> such an app anyway. Leave `write:chats` out of `MIGHTY_SCOPES` (an unoffered scope
+> fails with `invalid_scope`), run the Explorer test below, then Step 6. If sends
+> fail with `FORBIDDEN`, ask Mighty support which scope authorizes chat for your
+> Network.
 >
 > **Explorer test (no application needed):** open
 > `https://<subdomain>.mn.co/admin/headless-api/explorer` as a Host. It mints a
