@@ -107,7 +107,7 @@ function dmBaselineInbox() {
     p.deleteProperty("DM_BASELINE_CURSOR");
     p.setProperty("DM_BASELINE_DONE", "yes");
     Logger.log("Baseline done: " + Object.keys(state).length + " conversation(s). Only DMs after "
-      + dmEt_(new Date(p.getProperty("DM_BASELINE_AT"))) + " ET will be copied. Next: test (README step 8), then dmInstallTriggers().");
+      + dmEt_(new Date(p.getProperty("DM_BASELINE_AT"))) + " ET will be copied. Next: test (README step 9), then dmInstallTriggers().");
   }
 }
 

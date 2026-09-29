@@ -186,113 +186,309 @@ test/
 
 ## 4. Setup, step by step
 
+Budget about an hour the first time. Steps 1 and 2 happen in your Mighty
+Network's admin screens, Steps 3 to 7 in a terminal on your own computer.
+
+You need:
+
+- A Mighty Network on the **Scale plan or above** (OAuth applications only exist there).
+- Two Mighty accounts you control: the **Host** account that will send, and an
+  ordinary **member** account to receive test DMs.
+- **Node.js 20 or newer.** Nothing else to install: the repo has no packages.
+
 ### Step 1: Pick the sending account
 
-Every message goes out **as the account that signs in during Step 4**. Mighty
-has no "send as the community" option, and no admin mode that sends as someone
-else.
+*About 5 minutes.*
 
-Pick a **Host** account with a name and photo your members recognize. A
-dedicated "Community Team" Host account works well: replies land in an inbox
-your team can watch, and you avoid DMing from someone's personal profile.
+Every DM goes out **as the account that signs in during Step 4**. Mighty has no
+"send as the community" option and no admin mode that sends as someone else.
 
-> **Check:** in Network Admin > Members, the account's role is **Host**.
+**1a. Choose the account.** Pick a Host account with a name and photo your
+members recognize. A dedicated "Community Team" Host account works well: replies
+land in an inbox your team can watch, and you don't DM members from someone's
+personal profile.
+
+**1b. Confirm it's a Host.**
+1. Sign in to your Network as an admin and open **Admin** (the admin panel opens
+   over the community, with a menu down the left side).
+2. Open the members list (wording may differ: **Members** in the left menu) and
+   search for the account.
+3. Check that its role is **Host**.
+
+> ⚠️ **A non-Host can't send, and can't even sign in.** Mighty skips every DM from
+> a non-Host (`SKIPPED_SENDER_NOT_HOST`), and because this app requests a `host:`
+> scope, a non-Host account can't finish the Step 4 sign-in at all.
+
+**1c. Check private chat is on** for the Network and for the sending account
+(wording and location may differ; it's in the Network's chat or messaging
+settings, and in the account's own profile settings). With chat off, every send
+comes back `SKIPPED_NETWORK_CHAT_DISABLED` or `SKIPPED_SENDER_CHAT_DISABLED`.
+
+**1d. Find your mn.co subdomain.** Look at the address bar while you're in the
+admin panel. If it reads `https://your-community.mn.co/admin/...`, your subdomain
+is `your-community`. If your Network runs on a custom domain, the subdomain is
+still in your Mighty account settings or your plan emails (wording may differ).
+You can also confirm it in Step 3 with `npm run check-schema`, which fails on a
+wrong subdomain.
+
+✅ **Check:** you know which account sends, it's a **Host**, and you've written
+down the subdomain.
 
 ### Step 2: Create the OAuth application
 
-1. Sign in to your Network as a Host and open **Network Admin**.
-2. Go to **Integrations > OAuth Applications > New OAuth Application**.
-3. **Name:** something members will recognize on the consent screen, e.g.
-   "Community Messaging".
-4. **Client type:**
-   - **Confidential** if this runs on your machine or a server you control. You
-     get a Client Secret.
-   - **Public** if you can't keep a secret. PKCE is used either way.
-5. **Redirect URI:** `http://localhost:3000/oauth/callback`. Mighty accepts plain
-   `http` only for `localhost`.
-6. **Scopes:**
+*About 10 minutes.*
 
-   | Scope | Needed for |
-   |---|---|
-   | `write:chats` | Sending DMs (includes `read:chats`) |
-   | `host:read:network_members` | Looking up recipients by email or member ID |
-   | `read:userinfo` | `whoami`, and plain email addresses in lookups |
+**2a. Open OAuth Applications.**
+1. In **Admin**, scroll the left menu to **Integrations** and expand it. You'll
+   see **Admin API**, **MCP**, **Webhooks**, **OAuth Applications** and
+   **Headless API**.
+2. Click **OAuth Applications**. The page is titled **OAuth Applications**. On a
+   new Network it says *"You haven't created an OAuth application yet."* The
+   address is `https://<your community>/admin/oauth-applications`.
+3. Click **New OAuth Application** (green button, top right).
 
-7. Save, and copy the **Client ID** (and **Client Secret** if confidential).
+**2b. Fill in the "New OAuth Application" dialog.** Scroll inside the dialog to
+reach everything.
 
-> **Check:** the application shows those three scopes and the exact redirect URI.
->
-> **If `write:chats` isn't in the scope list,** don't stop yet. Mighty's docs now
-> say chat needs `read:chats` / `write:chats`, but some Networks' OAuth screens have
-> offered only `read:userinfo`, `read:network`, `write:posts` and `write:comments`
-> under Member Scopes, and reading and replying to DMs has been seen working with
-> such an app anyway. Leave `write:chats` out of `MIGHTY_SCOPES` (an unoffered scope
-> fails with `invalid_scope`), run the Explorer test below, then Step 6. If sends
-> fail with `FORBIDDEN`, ask Mighty support which scope authorizes chat for your
-> Network.
->
-> **Explorer test (no application needed):** open
-> `https://<subdomain>.mn.co/admin/headless-api/explorer` as a Host. It mints a
-> short-lived token that holds every scope. Run `query { me { directMessages(first: 5)
-> { nodes { id title } } } }`, copy a conversation `id`, then run:
->
-> ```graphql
-> mutation {
->   createDirectMessage(input: { conversationId: "PASTE_ID", text: "<p>API test</p>" }) {
->     errors
->     message { id textText }
->   }
-> }
-> ```
->
-> `errors: []` with a `message` means chat works for this account. Note the payload
-> field is `message`; asking for `directMessage` fails with `undefinedField`.
-> `redirect_uri_mismatch` later almost always means a trailing slash or port
-> doesn't match.
+| Field | What to enter |
+|---|---|
+| **Application Name** \* | Something members recognize if they ever see the consent screen, e.g. `Community Messaging` |
+| **Redirect URI** \* | `http://localhost:3000/oauth/callback`. The placeholder reads `https://myapp.com/oauth/callback`, and the hint says *"Multiple URIs can be separated by newlines"*. |
+| **Host Scopes** | Check **`host:read:network_members`** (*"View members in the network"*). Leave `host:read:network_events`, `host:read:network_spaces`, `host:read:network_plans` and `host:read:network_posts` unchecked. |
+| **Member Scopes** | Check **`read:userinfo`** (*"View your basic profile information"*). If the list includes **`write:chats`** (or `read:chats`), check it too. Leave `write:posts` and `write:comments` unchecked. |
+| **Confidential client** | **Checked** if this runs on your own computer or a server you control (you'll get a Client Secret). The hint reads *"Uncheck for public clients (native/SPA apps). Public clients require PKCE for security."* The code uses PKCE either way. |
+| **Skip consent screen** | Your choice. The hint reads *"Members authorizing this app skip the consent screen. Only enable for apps you trust to access your network."* Mighty's docs say chat scopes show the consent screen anyway. |
+
+Click **Create**.
+
+> ⚠️ **`write:chats` may not be in the list.** Mighty's docs say sending needs
+> `write:chats`, but some Networks' dialogs offer only `read:userinfo`,
+> `read:network`, `write:posts` and `write:comments` under **Member Scopes**. Reading
+> and sending DMs has been seen working with such an app anyway. If it isn't
+> offered, carry on, and in Step 3 remove `write:chats` from `MIGHTY_SCOPES`:
+> requesting a scope the app doesn't have fails the sign-in with `invalid_scope`.
+> Run the Explorer test in 2e to confirm chat works for your account before you
+> rely on it.
+
+**2c. Copy the credentials.** The dialog closes and the application appears as a
+card on the **OAuth Applications** page, with a pencil (edit) and a trash
+(delete) icon. The card shows:
+
+- **Client ID:** click the copy icon next to it.
+- **Client Secret:** masked. Click **Reveal**, then the copy icon.
+- **Redirect URI**, **Type** (*Confidential* or *Public*), **Scopes**, and
+  **Consent screen** (*Skipped* or shown).
+
+Keep the Client ID and Secret somewhere private until Step 3. Both are 43
+characters long.
+
+> ⚠️ **Long values are cut off on screen, not in the copy.** The masked and
+> narrow fields only *display* part of the value. Always use the copy icon, and
+> don't retype them.
+
+**2d. Check the card.** Click the pencil icon if anything is wrong. The Redirect
+URI must be exactly `http://localhost:3000/oauth/callback`: no trailing slash,
+same port, same path.
+
+**2e. Optional: prove chat works in the Headless API Explorer.** This checks
+that your account can read and send DMs through the API before you set up
+anything else. Because it sends a real message, do it in a conversation with
+your own test member account.
+
+1. In **Admin → Integrations**, click **Headless API**. The page shows
+   **GraphQL Endpoint** (`POST https://api.mn.co/networks/<number>/graphql`),
+   **Headless API Usage**, and a note: *"API quotas are currently for
+   informational purposes and are not yet enforced."*
+2. Click **Headless API Explorer** (top right). The Explorer opens with an
+   **OAuth Application** dropdown, a **Manage OAuth Applications** link, an
+   *"Expires at …"* time and a **Refresh token** button. The query editor is on
+   the left, with a green ▶ run button. Results appear on the right.
+3. Pick your new application in the **OAuth Application** dropdown. If the
+   token has expired, click **Refresh token**.
+4. Replace the editor contents with this query and click ▶:
+
+   ```graphql
+   query { me { directMessages(first: 5) { nodes { id title } } } }
+   ```
+
+   You should see your DM conversations, each with an `id` and a `title`.
+   (If you have no DMs yet, send one from the Mighty app to your test account
+   first, then run it again.)
+5. Copy the `id` of the conversation with your test account, and run:
+
+   ```graphql
+   mutation {
+     createDirectMessage(input: { conversationId: "PASTE_ID", text: "<p>API test, please ignore</p>" }) {
+       errors
+       message { id textText }
+     }
+   }
+   ```
+
+✅ **Check (2e):** the result shows `"errors": []` and a `message` with an `id`.
+The test account's inbox has the message.
+
+> ⚠️ **Explorer errors seen in testing:**
+> - `Field 'directMessage' doesn't exist on type 'CreateDirectMessagePayload'`
+>   with code `undefinedField`: the payload field is `message`, not `directMessage`.
+> - `createMessage` returns `NOT_FOUND` on a DM (the message text may be in
+>   another language, e.g. *"Conversation introuvable"*): `createMessage` is for
+>   *space* chats. DMs use `createDirectMessage` or `createConversation`.
+> - Listing *space* messages (`Space.messages`) has returned
+>   `INTERNAL_SERVER_ERROR`. DM messages are a different field and weren't affected.
+
+✅ **Check:** the application card shows the scopes you checked and the exact
+Redirect URI, and you have the Client ID (and Secret, if Confidential).
 
 ### Step 3: Configure the repo
+
+*About 10 minutes.*
+
+**3a. Check Node.** Open a terminal (PowerShell on Windows, Terminal on
+macOS/Linux) and run:
+
+```powershell
+node --version
+```
+
+It must print `v20` or higher. If it doesn't, install the current LTS from
+[nodejs.org](https://nodejs.org/) and open a new terminal.
+
+**3b. Get the code.** Either clone it:
 
 ```powershell
 git clone https://github.com/<you>/mighty-networks-hubspot-dm-integration.git
 cd mighty-networks-hubspot-dm-integration
+```
+
+or, on the GitHub page, click **Code → Download ZIP**, unzip it, and `cd` into
+the unzipped folder. You don't need to run `npm install`; there are no packages.
+
+**3c. Run the tests** to confirm Node works in this folder. Nothing is sent to
+Mighty:
+
+```powershell
+npm test
+```
+
+Every test should pass (`# fail 0` near the end).
+
+**3d. Create your `.env` file** from the example:
+
+```powershell
 Copy-Item .env.example .env
 notepad .env
 ```
 
-(macOS/Linux: `cp .env.example .env` and edit it with any editor.)
+(macOS/Linux: `cp .env.example .env`, then open `.env` in any editor.)
 
-Fill in:
+**3e. Fill in `.env`.** Each line is `NAME=value`, with no quotes and no spaces
+around the `=`.
 
 | Setting | Value |
 |---|---|
-| `MIGHTY_NETWORK` | Your **mn.co subdomain**, e.g. `my-community` for `my-community.mn.co`. Use this even if members visit a custom domain. |
-| `MIGHTY_CLIENT_ID` | From Step 2 |
-| `MIGHTY_CLIENT_SECRET` | From Step 2, or blank for a Public application |
-| `MIGHTY_REDIRECT_URI` | Exactly what you registered |
-| `MIGHTY_USER_AGENT` | `your-app/1.0 (+https://your-site.example)`. Mighty blocks requests without one. |
+| `MIGHTY_NETWORK` | Your **mn.co subdomain** from 1d, e.g. `your-community` for `your-community.mn.co`. Use this even if members visit a custom domain. Not a URL. |
+| `MIGHTY_CLIENT_ID` | The Client ID from 2c |
+| `MIGHTY_CLIENT_SECRET` | The Client Secret from 2c. **Leave it blank** for a Public application. |
+| `MIGHTY_REDIRECT_URI` | `http://localhost:3000/oauth/callback`, exactly as on the application card |
+| `MIGHTY_SCOPES` | The scopes you checked in 2b, separated by spaces. The default is `read:userinfo write:chats host:read:network_members`. **Remove `write:chats`** if the app doesn't have it. |
+| `MIGHTY_USER_AGENT` | `your-app/1.0 (+https://example.com)`, with your own name and site. Mighty blocks requests without one. |
+| `MIGHTY_TOKEN_FILE` | Leave as `.tokens.json` |
 
-> **Don't know your subdomain?** Open Network Admin; the admin URL is on
-> `<subdomain>.mn.co`. Or run `npm run check-schema`: a wrong subdomain fails there.
+Save the file and close the editor.
+
+**3f. Check the subdomain and the schema.** No token is needed yet:
+
+```powershell
+npm run check-schema
+```
+
+✅ **Check:** it prints `Schema OK: every field this repo uses is present.`
+
+| If you see | Fix |
+|---|---|
+| `MIGHTY_NETWORK must be the bare mn.co subdomain` | You entered a domain or URL. Use just `your-community`. |
+| `Schema download failed: HTTP 404` | Wrong subdomain. Recheck 1d. |
+| `Missing from the live schema: ...` | Mighty changed the API. Don't send until the code is updated. |
 
 ### Step 4: Authorize once
+
+*About 5 minutes.*
+
+**4a. Open a private browser window** (Chrome: **Ctrl+Shift+N**; Safari/Firefox:
+**File → New Private Window**) and sign in to your Mighty Network **as the
+sending account from Step 1**. A private window keeps you from approving as
+whoever your normal browser is signed in as.
+
+**4b. Start the sign-in script** in the terminal:
 
 ```powershell
 npm run authorize
 ```
 
-1. The script prints a URL. Open it in a browser **signed in as the sending account
-   from Step 1**. A private window avoids signing in with the wrong profile.
-2. Approve the consent screen. Chat scopes always show it; this is expected.
-3. The browser shows "Authorized", and the script saves `.tokens.json`.
+It prints:
 
-> **Check:** the script prints `Granted scopes:` including `write:chats`. If a
-> scope is missing, the account isn't a Host or the application doesn't allow
-> that scope.
+```text
+Open this URL, sign in as the Host account DMs should come from, and approve:
+
+https://your-community.mn.co/oauth/authorize?response_type=code&client_id=...&redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Foauth%2Fcallback&scope=...&state=...&code_challenge=...&code_challenge_method=S256
+
+Waiting for the redirect on http://localhost:3000/oauth/callback ...
+```
+
+Leave the terminal running.
+
+**4c. Open the URL.** Copy the whole `https://...` line (it's long) and paste it
+into the private window's address bar.
+
+**4d. Approve.** If the consent screen appears, it names your application and
+the permissions it asks for. Click the approve button (wording may differ). If
+you checked **Skip consent screen** and the scopes allow it, Mighty sends you
+straight on without a screen.
+
+**4e. Watch the redirect.** The browser goes to
+`http://localhost:3000/oauth/callback?code=...&state=...` and shows a plain page
+reading **`Authorized. You can close this tab.`** The terminal prints:
+
+```text
+Saved tokens to C:\...\mighty-networks-hubspot-dm-integration\.tokens.json
+Granted scopes: read:userinfo write:chats host:read:network_members
+Next: npm run whoami
+```
+
+and the script exits.
+
+✅ **Check:** `Granted scopes:` lists what you set in `MIGHTY_SCOPES`, and
+`.tokens.json` now exists in the repo folder.
+
+If `write:chats` wasn't granted, the script adds:
+`Note: write:chats was not granted. DMs may still work on your Network; test with npm run send before relying on it.`
+That's expected if your dialog didn't offer the scope. Step 6 proves whether
+sending works.
+
+> ⚠️ **What can go wrong here:**
+>
+> | You see | Cause | Fix |
+> |---|---|---|
+> | Browser shows `Authorization failed: invalid_scope` | `MIGHTY_SCOPES` asks for a scope the app doesn't have | Remove it from `.env` (usually `write:chats`), then `npm run authorize` again |
+> | Mighty shows a redirect URI error, or `redirect_uri_mismatch` | `.env` and the application card differ by a character | Make them identical, including port and path |
+> | Browser shows `State mismatch. Start again with npm run authorize.` | You opened a URL from an earlier run | Use the URL the *current* run printed |
+> | `Token exchange failed: invalid_client` | Wrong or partly copied ID or secret, or a secret set for a Public app | Recopy with the copy icons. Leave the secret blank for Public apps. |
+> | `EADDRINUSE` when the script starts | Something else is using port 3000 | Stop it, or change the port in **both** the application's Redirect URI and `MIGHTY_REDIRECT_URI` |
+> | The sign-in page won't let you in | The account isn't a Host, and a `host:` scope was requested | Use a Host account (Step 1) |
+>
+> Authorization codes are single-use and expire within minutes. After any
+> failure, start again from 4b to get a fresh one.
 
 You won't need to do this again unless the refresh token is revoked or expires.
-When that happens, scripts stop with `invalid_grant`; run `npm run authorize` again.
+When that happens, scripts stop with `invalid_grant`. Run `npm run authorize`
+again.
 
 ### Step 5: Confirm who you'll send as
+
+*About 2 minutes.*
+
+Run:
 
 ```powershell
 npm run whoami
@@ -305,18 +501,30 @@ Resource ID:  12345
 Scopes:       read:userinfo write:chats host:read:network_members
 ```
 
-If that isn't the account you meant, delete `.tokens.json` and repeat Step 4.
+✅ **Check:** **Sending as** is the account from Step 1.
+
+If it's anyone else, delete `.tokens.json` from the repo folder and repeat
+Step 4, making sure the private window is signed in as the right account.
+
+> ⚠️ `Mighty API returned non-JSON, HTTP 403` means `MIGHTY_USER_AGENT` is
+> missing or empty. `No tokens found. Run: npm run authorize` means Step 4
+> didn't finish.
 
 ### Step 6: Send a test DM to yourself on a second account
 
-Use a second, ordinary member account you control, not the sending account.
+*About 5 minutes.*
+
+Use the ordinary member account you control, **not** the sending account.
 Messaging yourself is skipped (`SKIPPED_SELF_MESSAGE`).
 
-Dry run first:
+**6a. Dry run.** Nothing is sent:
 
 ```powershell
 npm run send -- --to test-member@example.com --text "Testing the DM integration.\nLine two."
 ```
+
+(The `--` after `npm run send` is needed so npm passes the flags to the script.
+Type `\n` literally; the script turns it into a line break.)
 
 ```text
 From: Community Team
@@ -328,60 +536,120 @@ Line two.
 Dry run. Add --send to deliver it.
 ```
 
-Then send it for real:
+Check that **From** is the sending account and **To** is your test account.
+
+If it stops with `No member found for "test-member@example.com" (or your token cannot look them up)`,
+your plan or the member's privacy settings hide emails from the API. Use the
+member's **numeric ID** instead: `--to 67890`. You can find it in the Admin
+members list or in the member's profile address (wording may differ).
+
+**6b. Send it for real.** Same command, plus `--send`:
 
 ```powershell
 npm run send -- --to test-member@example.com --text "Testing the DM integration.\nLine two." --send
 ```
 
-> **Check:** the test account's Mighty inbox has the message from the sending
-> account, with the line break intact.
+```text
+Sent. Message <id> in conversation <id>
+```
 
-`--to` also accepts a numeric member ID or a GlobalID. Repeat `--to` to start a
-group DM.
+If it prints `Not sent: <reason> (<OUTCOME>)` instead, look the outcome up in
+[section 6](#6-why-a-dm-might-not-be-sent).
+
+**6c. Look at it in Mighty.** In the private window, sign out and sign in as the
+test account (or use a second private window). Open your chats or messages.
+
+✅ **Check:** the test account has the message from the sending account, with
+**Line two.** on its own line. Running 6b again posts into the **same**
+conversation rather than starting a new one.
+
+`--to` also accepts a GlobalID. Repeat `--to` to start a group DM.
 
 ### Step 7: Send to a list
 
-1. Make a CSV with a `recipient` column (email or member ID) and any columns your
-   message uses. See [`examples/recipients.example.csv`](examples/recipients.example.csv):
+*About 15 minutes, plus sending time.*
 
-   ```csv
-   recipient,first_name,plan
-   alex@example.com,Alex,Annual
-   jordan@example.com,,Monthly
-   1234567,Sam,Monthly
-   ```
+**7a. Make the recipients CSV.** Copy [`examples/recipients.example.csv`](examples/recipients.example.csv)
+to a new file, e.g. `recipients.csv`, and replace the rows. The file needs a
+`recipient` column (email or numeric member ID), plus any columns your message
+uses:
 
-2. Write the message with `{{placeholders}}`. See [`examples/message.example.txt`](examples/message.example.txt):
+```csv
+recipient,first_name,plan
+alex@example.com,Alex,Annual
+jordan@example.com,,Monthly
+1234567,Sam,Monthly
+```
 
-   ```text
-   Hi {{first_name}}, it's been a little while since we've seen you in the community.
-   ```
+If you edit it in Excel or Google Sheets, save or download it as **CSV**.
 
-   - `{{first_name}}` uses the CSV column, and falls back to the first word of the
-     member's Mighty profile name when the column is blank (Jordan above).
-   - `{{name}}` is the full Mighty profile name.
-   - Any other CSV column works, e.g. `{{plan}}`.
-   - A `message` column on a row overrides the template for that row.
+**7b. Write the message.** Copy [`examples/message.example.txt`](examples/message.example.txt)
+to `message.txt` and edit it:
 
-3. **Dry run** and read every preview:
+```text
+Hi {{first_name}}, it's been a little while since we've seen you in the community.
+```
 
-   ```powershell
-   npm run send-batch -- --csv recipients.csv --template-file message.txt
-   ```
+- `{{first_name}}` uses the CSV column, and falls back to the first word of the
+  member's Mighty profile name when the column is blank (Jordan above).
+- `{{name}}` is the full Mighty profile name.
+- Any other CSV column works, e.g. `{{plan}}`.
+- A `message` column on a row overrides the template for that row.
+- A blank line starts a new paragraph.
 
-4. **Send one** for real:
+**7c. Dry run** and read every preview:
 
-   ```powershell
-   npm run send-batch -- --csv recipients.csv --template-file message.txt --send --limit 1
-   ```
+```powershell
+npm run send-batch -- --csv recipients.csv --template-file message.txt
+```
 
-5. **Send the rest.** Same command, without `--limit`. The member you just sent to
-   is skipped because they're already in the log:
+```text
+DRY RUN as Community Team: 3 rows, 0 already sent per send-log.csv
 
-   ```powershell
-   npm run send-batch -- --csv recipients.csv --template-file message.txt --send
-   ```
+[dry-run] Alex Rivera <alex@example.com>
+    Hi Alex, it's been a little while since we've seen you in the community.
+
+[dry-run] Jordan Lee <jordan@example.com>
+    Hi Jordan, it's been a little while since we've seen you in the community.
+
+[failed] 1234567 - No member found (or lookup not permitted)
+
+Done: {"sent":0,"skipped":0,"failed":1,"alreadySent":0,"dryRun":2}
+Nothing was sent. Re-run with --send (try --limit 1 first).
+```
+
+Fix every `[failed]` row before sending:
+
+| Reason | Fix |
+|---|---|
+| `No member found (or lookup not permitted)` | Wrong email or ID, or email lookup is refused. Use the numeric member ID. |
+| `Missing value for {{plan}}` | That row has no value for a placeholder. Fill the cell or change the template. |
+| `Row has no recipient` | Empty `recipient` cell |
+
+Dry-run rows are **not** written to the log, so you can dry-run as often as you
+like.
+
+**7d. Send one** for real:
+
+```powershell
+npm run send-batch -- --csv recipients.csv --template-file message.txt --send --limit 1
+```
+
+The first line now reads `SENDING as ...`, and the row shows `[sent]`. Check
+that member's message in Mighty if you can (or send the first one to your test
+account by putting it first in the CSV).
+
+**7e. Send the rest.** Same command, without `--limit`:
+
+```powershell
+npm run send-batch -- --csv recipients.csv --template-file message.txt --send
+```
+
+The member from 7d is skipped because the log already has them. The first line
+says so: `... 3 rows, 1 already sent per send-log.csv`.
+
+✅ **Check:** the final `Done:` line has `"sent"` equal to the number of members
+you expected, and `send-log.csv` has one `sent` row per member.
 
 Every result is appended to `send-log.csv`:
 
@@ -391,10 +659,11 @@ Every result is appended to `send-log.csv`:
 | `memberId` | The member's numeric resource ID |
 | `messageId`, `conversationId` | GlobalIDs of what was sent |
 
-**Keep the log.** It is what prevents double sends. If a run stops for any
-reason, run the same command again with the same `--log` file. Use a new log
-file name for each new campaign, or a member who got campaign 1 will be skipped
-for campaign 2.
+> ⚠️ **Keep the log. It's what prevents double sends.** If a run stops for any
+> reason (a crash, a closed laptop, a throttle), run the **same command with the
+> same log file** again and it picks up where it left off. For each new
+> campaign, use a new log name, e.g. `--log send-log-october.csv`. Otherwise
+> anyone who got campaign 1 is skipped for campaign 2.
 
 Pacing: 3 seconds between sends by default (`--delay-ms` to change). When Mighty
 answers `THROTTLED`, the sender waits 1, 2, 3, then 4 minutes before giving up on
