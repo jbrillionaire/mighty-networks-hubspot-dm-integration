@@ -66,7 +66,7 @@ const server = createServer(async (req, res) => {
     finish(200, 'Authorized. You can close this tab.');
     console.log(`Saved tokens to ${config.tokenFile}`);
     console.log(`Granted scopes: ${tokens.scope}`);
-    if (!/write:chats/.test(tokens.scope ?? '')) console.warn('WARNING: write:chats was not granted, so sending DMs will fail.');
+    if (!/write:chats/.test(tokens.scope ?? '')) console.warn('Note: write:chats was not granted. DMs may still work on your Network; test with npm run send before relying on it.');
     console.log('Next: npm run whoami');
   } catch (err) {
     finish(500, `Token exchange failed: ${err.message}`);
