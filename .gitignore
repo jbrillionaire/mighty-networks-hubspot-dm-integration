@@ -1,0 +1,19 @@
+# .gitignore -- Mighty Networks integrations
+# Author: Jibril Sulaiman · Created: 2026-09-28
+# Why: this repo is public. OAuth tokens here can read and send a real person's
+# private messages, so token files, env files and send logs (which hold member
+# emails) must never reach history. Once pushed, a secret is compromised.
+
+node_modules/
+.env
+.env.*
+!.env.example
+.tokens.json
+*.token
+*secret*.json
+send-log*.csv
+recipients*.csv
+!examples/recipients.example.csv
+*.log
+.DS_Store
+Thumbs.db

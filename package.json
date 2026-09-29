@@ -1,0 +1,18 @@
+{
+  "name": "mighty-networks-integrations",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Integrations for the Mighty Networks API. First module: send direct messages to members through the GraphQL Mighty API with OAuth 2.0 + PKCE. Zero dependencies, Node 20+.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test test/",
+    "authorize": "node scripts/authorize.js",
+    "whoami": "node scripts/whoami.js",
+    "check-schema": "node scripts/check-schema.js",
+    "send": "node scripts/send-dm.js",
+    "send-batch": "node scripts/send-batch.js"
+  }
+}
