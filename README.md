@@ -1,5 +1,5 @@
 <!--
-  README.md -- Mighty Networks integrations
+  README.md -- Mighty Networks + HubSpot DM integration
   Author:  Jibril Sulaiman
   Created: 2026-09-28
   What:    The complete guide to this repo, starting with its first module:
@@ -10,7 +10,7 @@
            or outreach that goes out from the wrong account.
 -->
 
-# Mighty Networks integrations
+# Mighty Networks + HubSpot DM integration
 
 Working code and setup guides for the [Mighty Networks](https://www.mightynetworks.com/)
 **Mighty API**, the GraphQL API that combines the Member and Admin APIs.
@@ -19,8 +19,6 @@ Working code and setup guides for the [Mighty Networks](https://www.mightynetwor
 |---|---|---|
 | [Direct messages](#direct-messages) | Ready | DM one member or a CSV list of members from a Host account (Node) |
 | [DM sync with HubSpot](apps-script/dm-sync/README.md) | Ready | Two-way sync of a Host's DM inbox with HubSpot contacts: new DMs become notes, replies typed in HubSpot are sent as DMs (Google Apps Script) |
-
-More modules will be added here as they're built.
 
 Zero dependencies. The Node module needs Node 20 or newer and runs on your machine or any server you control; the HubSpot sync runs in Google Apps Script.
 
@@ -215,8 +213,8 @@ your team can watch, and you avoid DMing from someone's personal profile.
 ### Step 3: Configure the repo
 
 ```powershell
-git clone https://github.com/<you>/mighty-networks-integrations.git
-cd mighty-networks-integrations
+git clone https://github.com/<you>/mighty-networks-hubspot-dm-integration.git
+cd mighty-networks-hubspot-dm-integration
 Copy-Item .env.example .env
 notepad .env
 ```

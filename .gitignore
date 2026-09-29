@@ -1,4 +1,4 @@
-# .gitignore -- Mighty Networks integrations
+# .gitignore -- Mighty Networks + HubSpot DM integration
 # Author: Jibril Sulaiman · Created: 2026-09-28
 # Why: this repo is public. OAuth tokens here can read and send a real person's
 # private messages, so token files, env files and send logs (which hold member

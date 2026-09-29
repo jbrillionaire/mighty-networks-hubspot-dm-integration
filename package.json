@@ -1,9 +1,9 @@
 {
-  "name": "mighty-networks-integrations",
+  "name": "mighty-networks-hubspot-dm-integration",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Integrations for the Mighty Networks API. First module: send direct messages to members through the GraphQL Mighty API with OAuth 2.0 + PKCE. Zero dependencies, Node 20+.",
+  "description": "Send Mighty Networks direct messages from a Host account, and sync a Host's DM inbox two ways with HubSpot contacts. Mighty GraphQL API with OAuth 2.0 + PKCE. Zero dependencies; Node 20+ and Google Apps Script.",
   "engines": {
     "node": ">=20"
   },
