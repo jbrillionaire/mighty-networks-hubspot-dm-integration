@@ -429,11 +429,10 @@ The full list, with the exact operations and scopes, is in
   allowed to see that"** (plan, role, or the member's email-sharing consent).
   Failed lookups are rate limited. Member IDs from Mighty webhooks or the Admin
   REST API are the more reliable key.
-- **Member activity is available to Hosts.** `Member.lastActiveAt` (last visit to
-  the Network) and `Membership.lastActiveAt` (last visit to one Space) need a
-  `host:read:network_members`-level scope, and the roster sorts by `LAST_VISIT`
-  by default. So "message everyone who hasn't visited in 30 days" can be built
-  from Mighty data alone. That's a planned module for this repo.
+- **Member activity is a separate feature.** `Member.lastActiveAt` and
+  `Membership.lastActiveAt` exist for Host tokens, but this module doesn't use
+  them. If you target members by activity, build that list separately and hand
+  it to `send-batch` as a CSV.
 
 ---
 
