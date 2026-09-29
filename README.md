@@ -182,6 +182,30 @@ your team can watch, and you avoid DMing from someone's personal profile.
 7. Save, and copy the **Client ID** (and **Client Secret** if confidential).
 
 > **Check:** the application shows those three scopes and the exact redirect URI.
+>
+> **If `write:chats` isn't in the scope list,** your Network can't issue chat tokens
+> to your own applications yet. Mighty has been adding scopes to this screen over
+> time; some Networks have seen only `read:userinfo`, `read:network`,
+> `write:posts` and `write:comments` under Member Scopes. Don't continue: the
+> sends would all fail with `FORBIDDEN`. Ask Mighty support to enable chat scopes,
+> and meanwhile use the Explorer test below to confirm DMs work for your account.
+>
+> **Explorer test (no application needed):** open
+> `https://<subdomain>.mn.co/admin/headless-api/explorer` as a Host. It mints a
+> short-lived token that holds every scope. Run `query { me { directMessages(first: 5)
+> { nodes { id title } } } }`, copy a conversation `id`, then run:
+>
+> ```graphql
+> mutation {
+>   createDirectMessage(input: { conversationId: "PASTE_ID", text: "<p>API test</p>" }) {
+>     errors
+>     message { id textText }
+>   }
+> }
+> ```
+>
+> `errors: []` with a `message` means chat works for this account. Note the payload
+> field is `message`; asking for `directMessage` fails with `undefinedField`.
 > `redirect_uri_mismatch` later almost always means a trailing slash or port
 > doesn't match.
 
@@ -403,9 +427,11 @@ The full list, with the exact operations and scopes, is in
   allowed to see that"** (plan, role, or the member's email-sharing consent).
   Failed lookups are rate limited. Member IDs from Mighty webhooks or the Admin
   REST API are the more reliable key.
-- **There is no "last active" field for members** anywhere in the schema, so
-  "message everyone who's gone quiet" needs its audience from somewhere else.
-  Member segments, or an activity signal from your CRM, are the usual sources.
+- **Member activity is available to Hosts.** `Member.lastActiveAt` (last visit to
+  the Network) and `Membership.lastActiveAt` (last visit to one Space) need a
+  `host:read:network_members`-level scope, and the roster sorts by `LAST_VISIT`
+  by default. So "message everyone who hasn't visited in 30 days" can be built
+  from Mighty data alone. That's a planned module for this repo.
 
 ---
 
