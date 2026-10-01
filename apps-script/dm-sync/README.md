@@ -137,32 +137,26 @@ Leave the default tab alone. The script creates its own tabs (`DM Log`,
 This is a **standalone** project, not one opened from the sheet's **Extensions →
 Apps Script** menu. It finds the sheet by the id you copied.
 
-**1c. Turn `Code.gs` into [`Config.gs`](Config.gs).**
+**1c. Turn `Code.gs` into `Config.gs`.**
 1. In the **Files** list, hover over **Code.gs**, click its **⋮** menu, and
    choose **Rename**.
 2. Type `Config` and press **Enter**. The editor adds `.gs` itself, so don't
-   type it. (If you type [`Config.gs`](Config.gs) you get `Config.gs.gs`.)
+   type it. (If you type `Config.gs` you get `Config.gs.gs`.)
 3. Click in the code area, select everything (**Ctrl+A**), and delete it.
 4. Open [`apps-script/dm-sync/Config.gs`](Config.gs) in this repo. On GitHub,
    use the **Copy raw file** button (or **Raw**, then select all). Paste
    **all** of it into the empty editor.
 
-**1d. Add the other seven files.** For each file in the table, in this order:
-1. Click **+** next to **Files** and choose **Script**.
-2. Type the name exactly as in the table (no `.gs`) and press **Enter**.
-3. The new file opens with an empty `function myFunction() {}`. Select all and
-   delete it.
-4. Paste **all** of the matching repo file.
+**1d. Add the other seven files**, in this order. Type each name without `.gs`; the
+editor adds it.
 
-| Name to type | Paste in all of |
-|---|---|
-| `Auth` | [`apps-script/dm-sync/Auth.gs`](Auth.gs) |
-| `Mighty` | [`apps-script/dm-sync/Mighty.gs`](Mighty.gs) |
-| `HubSpot` | [`apps-script/dm-sync/HubSpot.gs`](HubSpot.gs) |
-| `State` | [`apps-script/dm-sync/State.gs`](State.gs) |
-| `Inbox` | [`apps-script/dm-sync/Inbox.gs`](Inbox.gs) |
-| `Outbox` | [`apps-script/dm-sync/Outbox.gs`](Outbox.gs) |
-| `Setup` | [`apps-script/dm-sync/Setup.gs`](Setup.gs) |
+1. **Auth** (one-time Mighty sign-in; token refresh with rotation): click **+** next to **Files**, choose **Script**, type `Auth` and press **Enter**. Select all and delete the empty `function myFunction() {}`, then paste **all** of [`apps-script/dm-sync/Auth.gs`](./Auth.gs).
+2. **Mighty** (the Mighty API calls: inbox, messages, member lookup, send): click **+** next to **Files**, choose **Script**, type `Mighty` and press **Enter**. Select all and delete the empty `function myFunction() {}`, then paste **all** of [`apps-script/dm-sync/Mighty.gs`](./Mighty.gs).
+3. **HubSpot** (contact lookup by `mn_member_id`, notes, property updates): click **+** next to **Files**, choose **Script**, type `HubSpot` and press **Enter**. Select all and delete the empty `function myFunction() {}`, then paste **all** of [`apps-script/dm-sync/HubSpot.gs`](./HubSpot.gs).
+4. **State** (the sheet tabs: state, send ledger, logs): click **+** next to **Files**, choose **Script**, type `State` and press **Enter**. Select all and delete the empty `function myFunction() {}`, then paste **all** of [`apps-script/dm-sync/State.gs`](./State.gs).
+5. **Inbox** (Mighty to HubSpot, `dmPollInbox`): click **+** next to **Files**, choose **Script**, type `Inbox` and press **Enter**. Select all and delete the empty `function myFunction() {}`, then paste **all** of [`apps-script/dm-sync/Inbox.gs`](./Inbox.gs).
+6. **Outbox** (HubSpot to Mighty, `dmPollOutbox`): click **+** next to **Files**, choose **Script**, type `Outbox` and press **Enter**. Select all and delete the empty `function myFunction() {}`, then paste **all** of [`apps-script/dm-sync/Outbox.gs`](./Outbox.gs).
+7. **Setup** (checks, baseline, triggers, status): click **+** next to **Files**, choose **Script**, type `Setup` and press **Enter**. Select all and delete the empty `function myFunction() {}`, then paste **all** of [`apps-script/dm-sync/Setup.gs`](./Setup.gs).
 
 Don't paste anything from [`tests/`](tests/) or this README into Apps Script.
 
