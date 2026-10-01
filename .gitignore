@@ -1,19 +1,15 @@
 # .gitignore -- Mighty Networks + HubSpot DM integration
-# Author: Jibril Sulaiman · Created: 2026-09-28
-# Why: this repo is public. OAuth tokens here can read and send a real person's
-# private messages, so token files, env files and send logs (which hold member
-# emails) must never reach history. Once pushed, a secret is compromised.
+# Author: Jibril Sulaiman · Created: 2026-09-28 (trimmed 2026-10-01)
+# Why: this repo is public. A Mighty refresh token can read and send a real
+# person's private messages, and exported sheet tabs hold member emails and DM
+# text, so none of them may reach history. Once pushed, a secret is compromised.
 
 node_modules/
 .env
 .env.*
-!.env.example
-.tokens.json
 *.token
 *secret*.json
-send-log*.csv
-recipients*.csv
-!examples/recipients.example.csv
+*.csv
 *.log
 .DS_Store
 Thumbs.db

@@ -3,16 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Send Mighty Networks direct messages from a Host account, and sync a Host's DM inbox two ways with HubSpot contacts. Mighty GraphQL API with OAuth 2.0 + PKCE. Zero dependencies; Node 20+ and Google Apps Script.",
+  "description": "Two-way sync between a Mighty Networks Host account's DM inbox and HubSpot contacts, in Google Apps Script.",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
-    "test": "node --test test/ apps-script/dm-sync/tests/",
-    "authorize": "node scripts/authorize.js",
-    "whoami": "node scripts/whoami.js",
-    "check-schema": "node scripts/check-schema.js",
-    "send": "node scripts/send-dm.js",
-    "send-batch": "node scripts/send-batch.js"
+    "test": "node --test tests/"
   }
 }

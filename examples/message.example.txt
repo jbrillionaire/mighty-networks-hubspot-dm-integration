@@ -1,3 +1,0 @@
-Hi {{first_name}}, it's been a little while since we've seen you in the community.
-
-This week's live session is on Thursday. Your {{plan}} membership includes it, and I'd love to see you there.

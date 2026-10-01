@@ -1,22 +1,42 @@
 <!--
   README.md -- Mighty Networks + HubSpot DM integration
   Author:  Jibril Sulaiman
-  Created: 2026-09-28
-  What:    What this integration is for, and the full guide to the Node
-           DM sender. The HubSpot sync's guide is apps-script/dm-sync/README.md.
-  Why:     The Mighty API sends every DM as a real person, never as "the
-           brand". Most mistakes here are quiet ones: a DM that is skipped
-           but counted as sent, a batch re-run that messages people twice,
-           or outreach that goes out from the wrong account.
+  Created: 2026-09-28 (restructured 2026-10-01)
+  What:    A Google Apps Script project that two-way syncs one Host account's
+           Mighty Networks DM inbox with HubSpot contacts, and the full guide to
+           install, test and run it.
+  Why:     Members' private messages are involved. Every step ends in a check,
+           and the script refuses to write to HubSpot or send anything until the
+           ID check and the inbox baseline are done.
 -->
 
 # Mighty Networks + HubSpot DM integration
 
 Handle [Mighty Networks](https://www.mightynetworks.com/) direct messages from
-HubSpot. When a member DMs your community's Host account, the message shows up
-on that member's HubSpot contact. When someone on your team types a reply in
-HubSpot, it's delivered to the member as a Mighty DM from the Host account.
-You can also send one-off or bulk DMs from a list.
+HubSpot. When a member DMs your community's Host account, the message shows up on
+that member's HubSpot contact. When someone on your team types a reply in HubSpot,
+it's delivered to the member as a Mighty DM from the Host account. It runs in
+Google Apps Script: no server, no webhook endpoint.
+
+| Direction | What happens | How often |
+|---|---|---|
+| **Mighty to HubSpot** | Each new DM becomes a Note on the member's contact ("Mighty DM from Alex Rivera"), and `mn_dm_last_inbound_at` is stamped. Messages the Host types in the Mighty app are copied too. | every 15 min |
+| **HubSpot to Mighty** | A rep types a reply into the contact's **Mighty DM reply** property. It goes out as a DM from the Host account, gets a Note ("Mighty DM sent by ... via HubSpot"), and the property clears. | every 5 min |
+
+```text
+ Member DMs the Host in Mighty ──► every 15 min ──► Note on the HubSpot contact
+ Rep types a reply in HubSpot  ──► every 5 min  ──► DM from the Host in Mighty
+```
+
+**Built to fail safely.** Members notice mistakes in their inbox, so the code is
+defensive where it matters:
+
+- A reply is never sent twice.
+- A DM Mighty declines to deliver, such as when a member has turned off private
+  chat, is recorded with the reason instead of counted as sent.
+- Old messages aren't dumped into HubSpot on the first run.
+- Nothing is written or sent until you've confirmed that Mighty members match the
+  right HubSpot contacts.
 
 ## Why it exists
 
@@ -32,794 +52,826 @@ where your team tracks everyone else. That creates three problems:
   token can only read and send its own user's messages. There's no admin view of
   every inbox and no way to send "as the brand."
 
-This integration closes that gap within those limits. It signs in once as the
-Host account members already talk to, checks that inbox on a schedule, and sends
-replies as that account.
+This integration closes that gap within those limits. It signs in once as the Host
+account members already talk to, checks that inbox on a schedule, and sends replies
+as that account.
 
-## What's in it
+**Keep it in its own project.** It gets its own Apps Script project, Google Sheet,
+Mighty sign-in and HubSpot key, separate from any other Mighty integration you run,
+so each can be paused or rotated without breaking the other.
 
-| Part | What it does | Runs on |
-|---|---|---|
-| [DM sync with HubSpot](apps-script/dm-sync/README.md) | **Two-way sync.** Every 15 minutes, new DMs become notes on the member's HubSpot contact and a "last inbound" date is stamped. Every 5 minutes, replies typed into a contact property are sent as DMs, with a note recording what was sent. | Google Apps Script (no server) |
-| [Direct messages](#direct-messages) | **Sending tool.** DM one member, or a CSV list with personalized fields, from a Host account. Dry run by default, resumable, never double-sends. | Node 20+ |
-
-```text
- Member DMs the Host in Mighty ──► every 15 min ──► Note on the HubSpot contact
- Rep types a reply in HubSpot  ──► every 5 min  ──► DM from the Host in Mighty
-```
-
-**Built to fail safely.** Members notice mistakes in their inbox, so the code is
-defensive where it matters:
-
-- A reply is never sent twice.
-- A DM Mighty declines to deliver, such as when a member has turned off private
-  chat, is reported with the reason instead of counted as sent.
-- Old messages aren't dumped into HubSpot on the first run.
-- Nothing is written or sent until you've confirmed that Mighty members match the
-  right HubSpot contacts.
-
-**Requirements:** a Mighty Network on a plan with OAuth applications (Scale or
-above), a Host account to send from, and for the HubSpot sync, a contact property
-holding each member's Mighty member ID. No other dependencies.
+**Requires:** a Mighty Network on a plan with OAuth applications (Scale or above),
+and a HubSpot number property `mn_member_id` on contacts that holds each member's
+Mighty member id (the numeric `resourceId`, the same id the Admin API uses). A
+roster sync or a Mighty webhook usually fills it.
 
 ---
 
-## Table of contents
+## Files
 
-- [Direct messages](#direct-messages)
-1. [How it works](#1-how-it-works)
-2. [Requirements](#2-requirements)
-3. [What's in this repo](#3-whats-in-this-repo)
-4. [Setup, step by step](#4-setup-step-by-step)
-   - [Step 1: Pick the sending account](#step-1-pick-the-sending-account)
-   - [Step 2: Create the OAuth application](#step-2-create-the-oauth-application)
-   - [Step 3: Configure the repo](#step-3-configure-the-repo)
-   - [Step 4: Authorize once](#step-4-authorize-once)
-   - [Step 5: Confirm who you'll send as](#step-5-confirm-who-youll-send-as)
-   - [Step 6: Send a test DM to yourself on a second account](#step-6-send-a-test-dm-to-yourself-on-a-second-account)
-   - [Step 7: Send to a list](#step-7-send-to-a-list)
-5. [Using the code from your own project](#5-using-the-code-from-your-own-project)
-6. [Why a DM might not be sent](#6-why-a-dm-might-not-be-sent)
-7. [Mighty API behavior the docs don't spell out](#7-mighty-api-behavior-the-docs-dont-spell-out)
-8. [When you don't need this](#8-when-you-dont-need-this)
-9. [Troubleshooting](#9-troubleshooting)
-10. [Testing](#10-testing)
-11. [Security](#11-security)
-
----
-
-## Direct messages
-
-Send a private message to members from a Host account, one at a time or from a
-CSV list, with per-member personalization:
-
-```text
-From: Community Team
-To:   Alex Rivera
-
-Hi Alex, it's been a little while since we've seen you in the community.
-
-This week's live session is on Thursday. Your Annual membership includes it,
-and I'd love to see you there.
-```
-
-The member gets it in their Mighty inbox with a normal push or email
-notification, exactly as if the Host had typed it.
-
-What you get on top of a raw API call:
-
-- **Dry run by default.** Nothing is sent until you pass `--send`.
-- **Skipped DMs are reported as skipped, with a reason.** For example, when a
-  member has turned private chat off.
-- **Resumable batches.** Every result is logged. Re-running skips everyone
-  already sent, so a crash half way never leads to double messages.
-- **No half-filled messages.** If a placeholder like `{{first_name}}` has no
-  value for a row, that row is held back instead of sending "Hi ,".
-- **Recipients by email or member ID.** Numeric IDs from Mighty webhooks or the
-  Admin REST API work as-is.
-- **Token refresh handled.** Including refresh-token rotation.
-
----
-
-## 1. How it works
-
-```text
- recipients.csv ──► send-batch.js ──► memberByEmail / member(id) ──► GlobalID
-                          │
-                          └──► createConversation(recipientIds, text,
-                                                  reportSkipsAsOutcomes: true)
-                                        │
-                                        ├── outcome SENT      ──► log "sent"
-                                        └── outcome SKIPPED_* ──► log "skipped" + reason
-```
-
-1. You authorize **once**, in a browser, as the Host account the messages should
-   come from. The script stores an access token and a refresh token.
-2. For each recipient, the code looks the member up to get their GraphQL
-   **GlobalID**. The chat mutations don't accept emails.
-3. It calls `createConversation`. That either starts a 1:1 DM or, if the two of
-   you already have one, posts into it, so members never get a pile of
-   duplicate threads.
-4. Mighty answers with an `outcome`. Only `SENT` counts as sent.
-
----
-
-## 2. Requirements
-
-| Requirement | Why |
+| File | What it does |
 |---|---|
-| A Mighty Network on the **Scale plan or above** (Scale, Growth, Mighty Pro) | OAuth applications, which the Mighty API requires, are only available there |
-| A **Host** account to send from | Mighty skips DMs from non-Hosts (`SKIPPED_SENDER_NOT_HOST`), and Host scopes are needed to look members up |
-| Private chat turned **on** for the Network | Otherwise every send is skipped (`SKIPPED_NETWORK_CHAT_DISABLED`) |
-| Node.js **20+** | Built-in `fetch`, `node:test` and `parseArgs`; no packages to install |
-| For email lookup: a plan with member-email visibility | Otherwise `memberByEmail` quietly returns nothing. Use member IDs instead. |
+| [`Config.gs`](Config.gs) | Network, sheet id, property names, limits |
+| [`Auth.gs`](Auth.gs) | One-time Mighty sign-in; token refresh with rotation |
+| [`Mighty.gs`](Mighty.gs) | The Mighty API calls: inbox, messages, member lookup, send |
+| [`HubSpot.gs`](HubSpot.gs) | Contact lookup by `mn_member_id`, notes, property updates |
+| [`State.gs`](State.gs) | The sheet tabs: state, send ledger, logs |
+| [`Inbox.gs`](Inbox.gs) | Mighty to HubSpot (`dmPollInbox`) |
+| [`Outbox.gs`](Outbox.gs) | HubSpot to Mighty (`dmPollOutbox`) |
+| [`Setup.gs`](Setup.gs) | Checks, baseline, triggers, status |
+| [`tests/`](tests/) | Local tests (`npm test`), never pasted into Apps Script |
 
 ---
 
-## 3. What's in this repo
+## Before you start: pick the sending account
 
-```text
-src/
-  config.js            settings from env or .env; builds the OAuth and GraphQL URLs
-  oauth.js             Authorization Code + PKCE, refresh, token file
-  graphql-client.js    request() with User-Agent, error handling, auto refresh
-  direct-messages.js   resolveRecipient, sendDirectMessage, replyInConversation, listDirectMessages
-  batch.js             templated, resumable, throttle-aware batch sender
-  csv.js               CSV parser/writer (handles commas and line breaks in messages)
-  schema-check.js      the schema fields this repo depends on
-scripts/
-  authorize.js         one-time browser sign-in
-  whoami.js            which account will the DMs come from?
-  send-dm.js           send one DM
-  send-batch.js        send to a CSV list
-  check-schema.js      confirm the live schema still has every field used
-examples/
-  recipients.example.csv
-  message.example.txt
-docs/
-  API-NOTES.md         operations, scopes, outcomes and quirks, verified against the live schema
-test/
-  direct-messages.test.js
-```
+Every synced DM is **this account's inbox**, and every reply is **sent as this
+account**. A Mighty token only reaches its own user's DMs, so there is no brand-wide
+or admin inbox.
+
+It must be a **Host**, or Mighty skips every send (`SKIPPED_SENDER_NOT_HOST`).
+A shared "Community Team" Host account works well; your own account works for testing.
 
 ---
 
-## 4. Setup, step by step
+## Setup
 
-Budget about an hour the first time. Steps 1 and 2 happen in your Mighty
-Network's admin screens, Steps 3 to 7 in a terminal on your own computer.
+Budget about 90 minutes. You'll work in four places: Google Sheets, the Apps
+Script editor, HubSpot settings, and your Mighty Network's admin panel.
 
 You need:
 
-- A Mighty Network on the **Scale plan or above** (OAuth applications only exist there).
-- Two Mighty accounts you control: the **Host** account that will send, and an
-  ordinary **member** account to receive test DMs.
-- **Node.js 20 or newer.** Nothing else to install: the repo has no packages.
+- A Google account that will own the script and the sheet. Triggers run as this
+  account.
+- HubSpot permission to create service keys and contact properties (usually a
+  Super Admin).
+- A Mighty Network on the **Scale plan or above**, the **Host** account from
+  "Before you start", and an ordinary member account you control for testing.
+- The contact property `mn_member_id` already filled in for your members.
 
-### Step 1: Pick the sending account
+### How to work in the Apps Script editor
 
-*About 5 minutes.*
+Every step below says "run" a function. In the editor that always means:
 
-Every DM goes out **as the account that signs in during Step 4**. Mighty has no
-"send as the community" option and no admin mode that sends as someone else.
+1. **Open the file** that contains the function, by clicking it in the **Files**
+   list on the left. The function dropdown only lists functions in the file
+   that's open. Functions whose names end in `_` (like `dmMe_`) are helpers and
+   never appear in the dropdown.
+2. **Save** first if the title bar shows **Unsaved changes** (**Ctrl+S**, or the
+   disk icon in the toolbar).
+3. Pick the function in the dropdown in the toolbar (between **Debug** and
+   **Execution log**).
+4. Click **▷ Run**. The **Execution log** panel opens under the code. It starts
+   with a yellow **Notice** row, *"Execution started"*, then one **Info** row per
+   log line, and ends with **Notice** *"Execution completed"*. While it runs, a
+   **Stop** button replaces Run.
+5. A failure is a red **Error** row with the message, followed by the file and
+   line it came from (e.g. `dmExchangeCode @ Auth.gs:62`).
 
-**1a. Choose the account.** Pick a Host account with a name and photo your
-members recognize. A dedicated "Community Team" Host account works well: replies
-land in an inbox your team can watch, and you don't DM members from someone's
-personal profile.
+The left rail of the editor has six icons, top to bottom: **Overview** (ⓘ),
+**Editor** (`<>`), **Project history**, **Triggers** (alarm clock),
+**Executions** (list with a ▶) and **Project Settings** (gear).
 
-**1b. Confirm it's a Host.**
-1. Sign in to your Network as an admin and open **Admin** (the admin panel opens
-   over the community, with a menu down the left side).
-2. Open the members list (wording may differ: **Members** in the left menu) and
-   search for the account.
-3. Check that its role is **Host**.
+| File | Functions you'll run from it |
+|---|---|
+| [`Auth.gs`](Auth.gs) | `dmCheckCreds`, `dmLogAuthorizeUrl` |
+| [`Setup.gs`](Setup.gs) | `dmWhoAmI`, `dmPeekInbox`, `dmVerifyIdMapping`, `dmConfirmIdMapping`, `dmBaselineInbox`, `dmInstallTriggers`, `dmRemoveTriggers`, `dmStatus`, plus the temporary `once` in Step 4 |
+| [`Inbox.gs`](Inbox.gs) | `dmPollInbox` |
+| [`Outbox.gs`](Outbox.gs) | `dmPollOutbox` |
+| [`Config.gs`](Config.gs), [`Mighty.gs`](Mighty.gs), [`HubSpot.gs`](HubSpot.gs), [`State.gs`](State.gs) | none (the dropdown shows **No functions**) |
 
-> ⚠️ **A non-Host can't send, and can't even sign in.** Mighty skips every DM from
-> a non-Host (`SKIPPED_SENDER_NOT_HOST`), and because this app requests a `host:`
-> scope, a non-Host account can't finish the Step 4 sign-in at all.
+### Step 1: Create the sheet and the Apps Script project
 
-**1c. Check private chat is on** for the Network and for the sending account
-(wording and location may differ; it's in the Network's chat or messaging
-settings, and in the account's own profile settings). With chat off, every send
-comes back `SKIPPED_NETWORK_CHAT_DISABLED` or `SKIPPED_SENDER_CHAT_DISABLED`.
+*About 20 minutes.*
 
-**1d. Find your mn.co subdomain.** Look at the address bar while you're in the
-admin panel. If it reads `https://your-community.mn.co/admin/...`, your subdomain
-is `your-community`. If your Network runs on a custom domain, the subdomain is
-still in your Mighty account settings or your plan emails (wording may differ).
-You can also confirm it in Step 3 with `npm run check-schema`, which fails on a
-wrong subdomain.
+**1a. Create the sheet.**
+1. Go to [sheets.new](https://sheets.new) (or Google Drive → **New → Google
+   Sheets → Blank spreadsheet**), signed in as the Google account that will own
+   the sync.
+2. Click **Untitled spreadsheet** at the top left and rename it `Mighty DM Sync`.
+3. Copy the sheet's **id** from the address bar: the long string between `/d/`
+   and `/edit`.
 
-✅ **Check:** you know which account sends, it's a **Host**, and you've written
-down the subdomain.
+   ```
+   https://docs.google.com/spreadsheets/d/1AbC...xYz/edit#gid=0
+                                          └──── id ────┘
+   ```
 
-### Step 2: Create the OAuth application
+Leave the default tab alone. The script creates its own tabs (`DM Log`,
+`DM Unmatched` and two hidden ones) the first time it needs them.
+
+> ⚠️ **Use a new sheet, not one another integration writes to.** The script
+> owns every tab it creates, and sharing a sheet makes it easy to delete the
+> hidden `_dm_outbox` tab that prevents double sends.
+
+**1b. Create the Apps Script project.**
+1. Go to [script.google.com](https://script.google.com/) and click **New
+   project** (top left). The editor opens on a project called **Untitled
+   project** with one file, **Code.gs**, containing an empty `myFunction`.
+2. Click **Untitled project** at the top, type `Mighty DM Sync`, and click
+   **Rename**.
+
+This is a **standalone** project, not one opened from the sheet's **Extensions →
+Apps Script** menu. It finds the sheet by the id you copied.
+
+**1c. Turn `Code.gs` into `Config.gs`.**
+1. In the **Files** list, hover over **Code.gs**, click its **⋮** menu, and
+   choose **Rename**.
+2. Type `Config` and press **Enter**. The editor adds `.gs` itself, so don't
+   type it. (If you type `Config.gs` you get `Config.gs.gs`.)
+3. Click in the code area, select everything (**Ctrl+A**), and delete it.
+4. Open [`Config.gs`](Config.gs) in this repo. On GitHub,
+   use the **Copy raw file** button (or **Raw**, then select all). Paste
+   **all** of it into the empty editor.
+
+**1d. Add the other seven files**, in this order. Type each name without `.gs`; the
+editor adds it.
+
+1. **Auth** (one-time Mighty sign-in; token refresh with rotation): click **+** next to **Files**, choose **Script**, type `Auth` and press **Enter**. Select all and delete the empty `function myFunction() {}`, then paste **all** of [`Auth.gs`](Auth.gs).
+2. **Mighty** (the Mighty API calls: inbox, messages, member lookup, send): click **+** next to **Files**, choose **Script**, type `Mighty` and press **Enter**. Select all and delete the empty `function myFunction() {}`, then paste **all** of [`Mighty.gs`](Mighty.gs).
+3. **HubSpot** (contact lookup by `mn_member_id`, notes, property updates): click **+** next to **Files**, choose **Script**, type `HubSpot` and press **Enter**. Select all and delete the empty `function myFunction() {}`, then paste **all** of [`HubSpot.gs`](HubSpot.gs).
+4. **State** (the sheet tabs: state, send ledger, logs): click **+** next to **Files**, choose **Script**, type `State` and press **Enter**. Select all and delete the empty `function myFunction() {}`, then paste **all** of [`State.gs`](State.gs).
+5. **Inbox** (Mighty to HubSpot, `dmPollInbox`): click **+** next to **Files**, choose **Script**, type `Inbox` and press **Enter**. Select all and delete the empty `function myFunction() {}`, then paste **all** of [`Inbox.gs`](Inbox.gs).
+6. **Outbox** (HubSpot to Mighty, `dmPollOutbox`): click **+** next to **Files**, choose **Script**, type `Outbox` and press **Enter**. Select all and delete the empty `function myFunction() {}`, then paste **all** of [`Outbox.gs`](Outbox.gs).
+7. **Setup** (checks, baseline, triggers, status): click **+** next to **Files**, choose **Script**, type `Setup` and press **Enter**. Select all and delete the empty `function myFunction() {}`, then paste **all** of [`Setup.gs`](Setup.gs).
+
+Don't paste anything from [`tests/`](tests/) or this README into Apps Script.
+
+**1e. Fill in [`Config.gs`](Config.gs).** Open **Config.gs** and replace the placeholder
+values. Keep the quotes.
+
+| Constant | What to put there | Where to find it |
+|---|---|---|
+| `DM_NETWORK` | Your Network's numeric id, e.g. `"1234567"` | Mighty **Admin → Integrations → Headless API**. The **GraphQL Endpoint** box shows `https://api.mn.co/networks/1234567/graphql`. Copy the number. |
+| `DM_OAUTH_HOST` | Your community's address with no trailing slash, e.g. `"https://your-community.mn.co"` | Your browser's address bar on the community. A custom domain has worked. If `/oauth/authorize` gives a 404 there, use `https://<subdomain>.mn.co`. |
+| `DM_REDIRECT_URI` | A page on your community, e.g. `"https://your-community.mn.co/"` | You'll register exactly this in Step 3. It only has to load: you copy the code out of the address bar. |
+| `DM_USER_AGENT` | `"mighty-dm-sync/1.0 (+https://example.com)"` with your own site | Anything descriptive. Mighty blocks requests without one. |
+| `DM_SPREADSHEET_ID` | The sheet id from 1a | |
+| `HS_PORTAL_ID` | Your HubSpot account id, e.g. `"12345678"` | The number in any HubSpot address, e.g. `app.hubspot.com/contacts/12345678/...`. Only used to build links in the log. |
+| `DM_TZ` | Your time zone as an IANA name, e.g. `"America/New_York"` | Used for times in notes and the log |
+
+Leave the property names (`HS_MEMBER_ID_PROP`, `HS_REPLY_PROP`,
+`HS_LAST_INBOUND_PROP`) as they are unless your HubSpot uses different internal
+names. The paging and safety limits can stay at their defaults.
+
+> ⚠️ **`DM_REDIRECT_URI` must match the Mighty application character for
+> character, trailing slash included.** `https://your-community.mn.co/` and
+> `https://your-community.mn.co` are different URIs to OAuth.
+
+**1f. Save.** Press **Ctrl+S**. **Unsaved changes** disappears from the title
+bar.
+
+**1g. Set the project's time zone.**
+1. Click **Project Settings** (gear, bottom of the left rail).
+2. Under **General settings**, set **Time zone** to the same zone as `DM_TZ`
+   (wording may differ). Trigger times follow this setting.
+3. Make sure the **Chrome V8 runtime** option is checked (wording may differ).
+   New projects have it on by default, and the code needs it.
+
+✅ **Check:** the **Files** list shows exactly eight files: [`Config.gs`](Config.gs),
+[`Auth.gs`](Auth.gs), [`Mighty.gs`](Mighty.gs), [`HubSpot.gs`](HubSpot.gs), [`State.gs`](State.gs), [`Inbox.gs`](Inbox.gs), [`Outbox.gs`](Outbox.gs),
+[`Setup.gs`](Setup.gs). None shows a red error marker, and the title bar doesn't say
+**Unsaved changes**.
+
+### Step 2: Create the HubSpot service key
 
 *About 10 minutes.*
 
-**2a. Open OAuth Applications.**
-1. In **Admin**, scroll the left menu to **Integrations** and expand it. You'll
-   see **Admin API**, **MCP**, **Webhooks**, **OAuth Applications** and
-   **Headless API**.
-2. Click **OAuth Applications**. The page is titled **OAuth Applications**. On a
-   new Network it says *"You haven't created an OAuth application yet."* The
-   address is `https://<your community>/admin/oauth-applications`.
-3. Click **New OAuth Application** (green button, top right).
+**2a. Open Service Keys.** In HubSpot, click the **Settings** gear in the top
+bar. In the left menu, open the service key list (wording and location may
+differ: **Integrations → Service Keys**, or **Development → Keys → Service
+Keys**). The page is titled **Service Keys**, with a table of **Name**, **Last
+updated** and **Service key ID**.
 
-**2b. Fill in the "New OAuth Application" dialog.** Scroll inside the dialog to
+> If you land on **Private Apps** and see *"Your private apps have moved"*, or a
+> **Create Legacy App** dialog saying *"Service Keys are the better path"*,
+> click **Use Service Keys instead**. Don't create a legacy private app.
+
+**2b. Create the key.**
+1. Click **Create service key**. The page is titled **Create Service Key**.
+2. **Name:** `Mighty DM Sync`. (*"This name will appear in some HubSpot tools
+   like logs and other material. It must be unique to this account."*)
+3. Under **Scopes → Selected scopes**, click **+ Add new scope** and add these
+   two, and nothing else:
+
+   | Scope | Why |
+   |---|---|
+   | `crm.objects.contacts.read` | Find the contact by `mn_member_id`, find pending replies |
+   | `crm.objects.contacts.write` | Create notes, stamp the last-inbound date, clear the reply property |
+
+   Each chosen scope appears in the list with a **Delete** link. Expand
+   **Summary of selected scopes** if you want to double-check.
+4. Click the create button at the top right (wording may differ).
+
+**2c. Copy the key.** The key's page shows a **Service Key** box (*"Used to make
+API calls."*) with the key masked, starting `pat-`. Click **Show**, then
+**Copy**. The same page has **Rotate**, **View Logs**, **Edit** and **Delete this
+Service Key**.
+
+> ⚠️ **Use a new key, not one another integration already uses.** Rotating a
+> shared key for one integration silently breaks the other with `HubSpot 401`.
+
+**2d. Store it in Script Properties.**
+1. In the Apps Script editor, click **Project Settings** (gear).
+2. Scroll down to **Script Properties**.
+3. Click **Add script property** (if properties already exist, click **Edit
+   script properties** first, then **Add script property**).
+4. **Property:** `DM_HS_TOKEN`. **Value:** paste the key. No quotes, no spaces.
+5. Click **Save script properties**.
+
+> ⚠️ **Nothing is stored until you click "Save script properties".** Values typed
+> into the boxes and left unsaved are simply gone. In a real setup, credentials
+> that were typed in but never saved showed up as length **0**, and Mighty then
+> rejected the sign-in with `invalid_client` ... *"no client authentication
+> included"*. `dmCheckCreds` (next) catches this.
+
+**2e. Authorize the script with Google.** This is a one-time prompt, and it's
+best done now: in Step 4 you'll have only a few minutes to use a Mighty code, and
+this prompt takes time the first time.
+1. Click **Editor** (`<>`) in the left rail and open **Auth.gs**.
+2. Pick **`dmCheckCreds`** in the function dropdown and click **Run**.
+3. An **Authorization required** dialog appears. Click **Review permissions**.
+4. Choose the Google account that owns the project.
+5. Google warns **"Google hasn't verified this app"**. That's normal for a script
+   you wrote yourself. Click **Advanced**, then **Go to Mighty DM Sync
+   (unsafe)**.
+6. Review the access list and click **Allow**. If there are checkboxes, check all
+   of them (**Select all**). The script needs to reach external services
+   (Mighty and HubSpot), edit your spreadsheets, and run when you're not present
+   (the triggers). Wording may differ.
+7. The function then runs.
+
+✅ **Check:** the Execution log shows `DM_HS_TOKEN set: true`. The other lines
+show lengths of 0 and `DM_REFRESH_TOKEN set: false` for now; that's expected.
+
+> ⚠️ If the log shows the Google error *"An unknown error has occurred, please
+> try again later."*, click **Run** again. In testing it was transient and the
+> retry worked. If it keeps happening, the project's Script Properties store may
+> be full (it's capped at 500 KB). This project stores very little there, so
+> that only happens if you've reused an old project.
+
+### Step 3: Create the Mighty OAuth application
+
+*About 10 minutes.*
+
+**3a. Open OAuth Applications.** Sign in to your Network as a Host and open
+**Admin**. In the left menu, expand **Integrations** and click **OAuth
+Applications**. Click **New OAuth Application** (green button, top right).
+
+**3b. Fill in the "New OAuth Application" dialog.** Scroll inside the dialog to
 reach everything.
 
 | Field | What to enter |
 |---|---|
-| **Application Name** \* | Something members recognize if they ever see the consent screen, e.g. `Community Messaging` |
-| **Redirect URI** \* | `http://localhost:3000/oauth/callback`. The placeholder reads `https://myapp.com/oauth/callback`, and the hint says *"Multiple URIs can be separated by newlines"*. |
-| **Host Scopes** | Check **`host:read:network_members`** (*"View members in the network"*). Leave `host:read:network_events`, `host:read:network_spaces`, `host:read:network_plans` and `host:read:network_posts` unchecked. |
-| **Member Scopes** | Check **`read:userinfo`** (*"View your basic profile information"*). If the list includes **`write:chats`** (or `read:chats`), check it too. Leave `write:posts` and `write:comments` unchecked. |
-| **Confidential client** | **Checked** if this runs on your own computer or a server you control (you'll get a Client Secret). The hint reads *"Uncheck for public clients (native/SPA apps). Public clients require PKCE for security."* The code uses PKCE either way. |
-| **Skip consent screen** | Your choice. The hint reads *"Members authorizing this app skip the consent screen. Only enable for apps you trust to access your network."* Mighty's docs say chat scopes show the consent screen anyway. |
+| **Application Name** \* | `Mighty DM Sync`. Members may see this name on a consent screen. |
+| **Redirect URI** \* | Exactly your `DM_REDIRECT_URI` from 1e, e.g. `https://your-community.mn.co/`. (Hint: *"Multiple URIs can be separated by newlines"*.) |
+| **Host Scopes** | Check **`host:read:network_members`** (*"View members in the network"*). Leave the other four unchecked. |
+| **Member Scopes** | Check **`read:userinfo`** (*"View your basic profile information"*) and **`read:network`** (*"View all network content you have access to (excluding chats)"*). If the list includes `read:chats` and `write:chats`, check both. Leave `write:posts` and `write:comments` unchecked. |
+| **Confidential client** | **Checked.** Apps Script runs on Google's servers and keeps the secret in Script Properties. The code sends the secret and doesn't use PKCE, so a Public client won't work. |
+| **Skip consent screen** | **Unchecked** (recommended). You then see a consent screen once in Step 4. If you check it, Mighty sends you straight back without one. |
 
 Click **Create**.
 
-> ⚠️ **`write:chats` may not be in the list.** Mighty's docs say sending needs
-> `write:chats`, but some Networks' dialogs offer only `read:userinfo`,
-> `read:network`, `write:posts` and `write:comments` under **Member Scopes**. Reading
-> and sending DMs has been seen working with such an app anyway. If it isn't
-> offered, carry on, and in Step 3 remove `write:chats` from `MIGHTY_SCOPES`:
-> requesting a scope the app doesn't have fails the sign-in with `invalid_scope`.
-> Run the Explorer test in 2e to confirm chat works for your account before you
-> rely on it.
+> ⚠️ **No chat scopes in the list is not necessarily a blocker.** `read:network`
+> says *"excluding chats"*, and some Networks' dialogs offer no chat scope at
+> all, yet reading and replying to DMs has been seen working with such an app.
+> Step 6 proves whether DM reads work for you before anything depends on them.
 
-**2c. Copy the credentials.** The dialog closes and the application appears as a
-card on the **OAuth Applications** page, with a pencil (edit) and a trash
-(delete) icon. The card shows:
+**3c. Copy the credentials.** The application now appears as a card. It shows
+**Client ID** (with a copy icon), **Client Secret** (masked, with **Reveal** and a
+copy icon), **Redirect URI**, **Type: Confidential**, **Scopes** and **Consent
+screen**. Use the copy icons; the fields display only part of each value.
 
-- **Client ID:** click the copy icon next to it.
-- **Client Secret:** masked. Click **Reveal**, then the copy icon.
-- **Redirect URI**, **Type** (*Confidential* or *Public*), **Scopes**, and
-  **Consent screen** (*Skipped* or shown).
+**3d. Add three Script Properties.** In Apps Script: **Project Settings → Script
+Properties → Edit script properties**, then **Add script property** for each:
 
-Keep the Client ID and Secret somewhere private until Step 3. Both are 43
-characters long.
+| Property | Value |
+|---|---|
+| `DM_CLIENT_ID` | The Client ID |
+| `DM_CLIENT_SECRET` | The Client Secret (click **Reveal**, then copy) |
+| `DM_SCOPES` | The scopes you checked in 3b, separated by single spaces, e.g. `host:read:network_members read:userinfo read:network` |
 
-> ⚠️ **Long values are cut off on screen, not in the copy.** The masked and
-> narrow fields only *display* part of the value. Always use the copy icon, and
-> don't retype them.
+Click **Save script properties**.
 
-**2d. Check the card.** Click the pencil icon if anything is wrong. The Redirect
-URI must be exactly `http://localhost:3000/oauth/callback`: no trailing slash,
-same port, same path.
+> ⚠️ **`DM_SCOPES` must not ask for more than the application has.** A scope that
+> isn't on the application fails the sign-in with `invalid_scope`. Asking for
+> fewer is fine.
 
-**2e. Optional: prove chat works in the Headless API Explorer.** This checks
-that your account can read and send DMs through the API before you set up
-anything else. Because it sends a real message, do it in a conversation with
-your own test member account.
+> **Don't add any other `DM_` properties by hand.** The script writes
+> `DM_OAUTH_STATE`, `DM_REFRESH_TOKEN`, `DM_AUTH_BASIC`,
+> `DM_ID_MAPPING_CONFIRMED`, `DM_BASELINE_AT`, `DM_BASELINE_CURSOR`,
+> `DM_BASELINE_DONE` and `DM_INBOX_INCOMPLETE` itself as setup goes on.
 
-1. In **Admin → Integrations**, click **Headless API**. The page shows
-   **GraphQL Endpoint** (`POST https://api.mn.co/networks/<number>/graphql`),
-   **Headless API Usage**, and a note: *"API quotas are currently for
-   informational purposes and are not yet enforced."*
-2. Click **Headless API Explorer** (top right). The Explorer opens with an
-   **OAuth Application** dropdown, a **Manage OAuth Applications** link, an
-   *"Expires at …"* time and a **Refresh token** button. The query editor is on
-   the left, with a green ▶ run button. Results appear on the right.
-3. Pick your new application in the **OAuth Application** dropdown. If the
-   token has expired, click **Refresh token**.
-4. Replace the editor contents with this query and click ▶:
+**3e. Check the credentials.** Open **Auth.gs**, run **`dmCheckCreds`**.
 
-   ```graphql
-   query { me { directMessages(first: 5) { nodes { id title } } } }
+✅ **Check:** the log shows:
+
+```
+DM_CLIENT_ID length: 43 (expect 43)
+DM_CLIENT_SECRET length: 43 (expect 43)
+DM_REFRESH_TOKEN set: false
+DM_HS_TOKEN set: true
+OAuth host: https://your-community.mn.co | redirect: https://your-community.mn.co/
+```
+
+A length of **0** means the property wasn't saved (repeat 3d and click **Save
+script properties**). Any length other than 43 means it was copied partly;
+recopy it with the copy icon.
+
+### Step 4: Sign in as the sending account
+
+*About 10 minutes. Once you open the sign-in link, finish 4c to 4f within a few
+minutes: Mighty's codes are single-use and expire quickly.*
+
+**4a. Open a private window** (Chrome: **Ctrl+Shift+N**) and sign in to your
+Mighty Network **as the sending account** from "Before you start". Keep the Apps
+Script editor open in your normal window.
+
+**4b. Get the sign-in link.** In the editor, open **Auth.gs**, run
+**`dmLogAuthorizeUrl`**. The log shows:
+
+```
+Open this signed in as the HOST account DMs should come from, approve, then copy the code= and state= values from the address bar:
+https://your-community.mn.co/oauth/authorize?response_type=code&client_id=...&redirect_uri=https%3A%2F%2Fyour-community.mn.co%2F&scope=...&state=...
+```
+
+Select the whole `https://...` line in the log and copy it.
+
+> ⚠️ **Only the newest link works.** Each run of `dmLogAuthorizeUrl` makes a new
+> `state` value and forgets the old one. If you run it twice, use the second
+> link, or `dmExchangeCode` later refuses the code with *"state does not match
+> the sign-in URL this project generated"*.
+
+**4c. Approve.** Paste the link into the **private window's** address bar and
+press **Enter**. If a consent screen appears, it names **Mighty DM Sync** and the
+permissions it asks for. Approve it (the button wording may differ).
+
+**4d. Copy the code and state.** Mighty sends you to your redirect page, and the
+address bar reads:
+
+```
+https://your-community.mn.co/?code=AbC123...&state=9f8e7d...
+```
+
+The page itself is just your community; the values are only in the address bar.
+Copy two values:
+
+- **code**: everything after `code=` up to (not including) the next `&`.
+- **state**: everything after `state=` up to the end (or the next `&`).
+
+> ⚠️ Mighty requires `state`. A hand-built link without it lands on an error
+> page whose address ends in `error=invalid_request&error_description=Missing+required+parameter%3A+state.`
+> Always use the link from `dmLogAuthorizeUrl`, which includes it.
+
+**4e. Exchange the code.** The function dropdown can't pass values to a
+function, so you add a tiny temporary one:
+1. Open **Setup.gs** and scroll to the very bottom.
+2. Paste this on a new line, replacing the two placeholders (keep the quotes):
+
+   ```javascript
+   function once() { dmExchangeCode("PASTE_CODE", "PASTE_STATE"); }
    ```
 
-   You should see your DM conversations, each with an `id` and a `title`.
-   (If you have no DMs yet, send one from the Mighty app to your test account
-   first, then run it again.)
-5. Copy the `id` of the conversation with your test account, and run:
+3. Press **Ctrl+S**.
+4. Pick **`once`** in the dropdown and click **Run**.
 
-   ```graphql
-   mutation {
-     createDirectMessage(input: { conversationId: "PASTE_ID", text: "<p>API test, please ignore</p>" }) {
-       errors
-       message { id textText }
-     }
-   }
-   ```
+✅ **Check:** the log shows:
 
-✅ **Check (2e):** the result shows `"errors": []` and a `message` with an `id`.
-The test account's inbox has the message.
-
-> ⚠️ **Explorer errors seen in testing:**
-> - `Field 'directMessage' doesn't exist on type 'CreateDirectMessagePayload'`
->   with code `undefinedField`: the payload field is `message`, not `directMessage`.
-> - `createMessage` returns `NOT_FOUND` on a DM (the message text may be in
->   another language, e.g. *"Conversation introuvable"*): `createMessage` is for
->   *space* chats. DMs use `createDirectMessage` or `createConversation`.
-> - Listing *space* messages (`Space.messages`) has returned
->   `INTERNAL_SERVER_ERROR`. DM messages are a different field and weren't affected.
-
-✅ **Check:** the application card shows the scopes you checked and the exact
-Redirect URI, and you have the Client ID (and Secret, if Confidential).
-
-### Step 3: Configure the repo
-
-*About 10 minutes.*
-
-**3a. Check Node.** Open a terminal (PowerShell on Windows, Terminal on
-macOS/Linux) and run:
-
-```powershell
-node --version
+```
+Stored. Granted scopes: host:read:network_members read:userinfo read:network
+Next: run dmWhoAmI().
 ```
 
-It must print `v20` or higher. If it doesn't, install the current LTS from
-[nodejs.org](https://nodejs.org/) and open a new terminal.
+It may first show `Body credentials rejected; retrying with HTTP Basic...`.
+That's fine: the script remembers which method worked.
 
-**3b. Get the code.** Either clone it:
+| Error in the log | Cause | Fix |
+|---|---|---|
+| `state does not match the sign-in URL this project generated` | Link from an older `dmLogAuthorizeUrl` run, or state copied wrong | Start again at 4b |
+| `Token exchange failed: HTTP 400 ... invalid_grant` | Code already used, expired, or the redirect URI differs | Start again at 4b and move faster. Recheck `DM_REDIRECT_URI` against the app. |
+| `Token exchange failed: HTTP 401 ... invalid_client` | Wrong or partly copied id or secret | Run `dmCheckCreds`; recopy (3c, 3d) |
+| `Mighty returned no refresh_token` | The application isn't returning refresh tokens | Check the app is **Confidential**; ask Mighty support |
 
-```powershell
-git clone https://github.com/<you>/mighty-networks-hubspot-dm-integration.git
-cd mighty-networks-hubspot-dm-integration
+**4f. Delete the temporary function.** Remove the `function once() ...` line
+from **Setup.gs** and press **Ctrl+S**. It holds a spent code, and the refresh
+token is already safe in Script Properties.
+
+**4g. Confirm the account.** In **Setup.gs**, run **`dmWhoAmI`**.
+
+✅ **Check:** the log reads:
+
+```
+Token acts as: Community Team (member id 12345, GlobalID TWVtYmVyOjEyMzQ1).
+Every synced DM is this account's inbox, and every reply is sent as this account.
 ```
 
-or, on the GitHub page, click **Code → Download ZIP**, unzip it, and `cd` into
-the unzipped folder. You don't need to run `npm install`; there are no packages.
+If it names the wrong person: **Project Settings → Script Properties → Edit
+script properties**, delete the `DM_REFRESH_TOKEN` row (trash icon), click
+**Save script properties**, and repeat this step with the private window signed
+in as the right account.
 
-**3c. Run the tests** to confirm Node works in this folder. Nothing is sent to
-Mighty:
+### Step 5: Create the two HubSpot contact properties
 
-```powershell
-npm test
-```
+*About 15 minutes.*
 
-Every test should pass (`# fail 0` near the end).
+**5a. Open contact properties.** In HubSpot, click the **Settings** gear. In the
+left menu, go to **Data Management → Properties** (wording may differ). Make sure
+the object selector reads **Contact properties**, then click **Create
+property**.
 
-**3d. Create your `.env` file** from the example:
+**5b. Create both properties.** HubSpot shows either a **Create new property**
+side panel (with a **Create manually** tab) or an **Add property details** page.
+Either way, create each row of this table:
 
-```powershell
-Copy-Item .env.example .env
-notepad .env
-```
+| Property label | Internal name | Field type |
+|---|---|---|
+| `Mighty DM reply` | `mn_dm_reply` | **Multi-line text** |
+| `Mighty DM last inbound at` | `mn_dm_last_inbound_at` | **Date and time picker** (wording may differ) |
 
-(macOS/Linux: `cp .env.example .env`, then open `.env` in any editor.)
+For each one:
+1. Type the **Property label**.
+2. **Set the internal name by hand.** HubSpot builds it from the label, and
+   `Mighty DM reply` becomes `mighty_dm_reply`, which is wrong. In the side
+   panel, click the **`</>`** icon next to the label field to edit it. On the
+   older page it's shown as **Internal name** under the label.
+3. If there's a **Group** field, pick **Contact information**, or create a group
+   called `Mighty` (wording may differ).
+4. Choose the **Field type** from the dropdown (**Single-line text**,
+   **Multi-line text**, **URL**, **Email**, ...).
+5. Leave **Require unique values for this property** unchecked.
+6. Create the property.
 
-**3e. Fill in `.env`.** Each line is `NAME=value`, with no quotes and no spaces
-around the `=`.
+> ⚠️ **The internal name is what the code uses, and it can't be changed later.**
+> If it's off by one character, HubSpot's search simply returns nothing: replies
+> sit in the property unsent with no error anywhere. If you get it wrong, delete
+> the property and create it again, or change `HS_REPLY_PROP` /
+> `HS_LAST_INBOUND_PROP` in [`Config.gs`](Config.gs) to match what you created.
 
-| Setting | Value |
-|---|---|
-| `MIGHTY_NETWORK` | Your **mn.co subdomain** from 1d, e.g. `your-community` for `your-community.mn.co`. Use this even if members visit a custom domain. Not a URL. |
-| `MIGHTY_CLIENT_ID` | The Client ID from 2c |
-| `MIGHTY_CLIENT_SECRET` | The Client Secret from 2c. **Leave it blank** for a Public application. |
-| `MIGHTY_REDIRECT_URI` | `http://localhost:3000/oauth/callback`, exactly as on the application card |
-| `MIGHTY_SCOPES` | The scopes you checked in 2b, separated by spaces. The default is `read:userinfo write:chats host:read:network_members`. **Remove `write:chats`** if the app doesn't have it. |
-| `MIGHTY_USER_AGENT` | `your-app/1.0 (+https://example.com)`, with your own name and site. Mighty blocks requests without one. |
-| `MIGHTY_TOKEN_FILE` | Leave as `.tokens.json` |
+**5c. Check `mn_member_id` exists.** In the same list, search for
+`mn_member_id`. It must be there (a **number** property), and your members'
+contacts must have it filled in. This guide doesn't create it: a roster sync or
+a Mighty webhook usually fills it.
 
-Save the file and close the editor.
+**5d. Make the reply box easy to find.** On any contact record, the left
+sidebar's **About this contact** card only shows some properties. Add **Mighty DM
+reply** and **Mighty DM last inbound at** to it through the card's customize or
+edit option (wording may differ). Until you do, reps can reach them through
+**View all properties** and the search box there.
 
-**3f. Check the subdomain and the schema.** No token is needed yet:
+**5e. Create a "Mighty DMs" contact view.**
+1. Go to **CRM → Contacts**.
+2. Add a new view: click **+** next to the view tabs, or **All views → Create new
+   view** (wording may differ). Name it `Mighty DMs: last 7 days`.
+3. Open **Advanced filters** and add a filter: **Mighty DM last inbound at** is in
+   the **last 7 days** (wording may differ).
+4. Use **Edit columns** to add **Mighty DM last inbound at** and **Mighty DM
+   reply**, then click the **Mighty DM last inbound at** column header to sort
+   newest first.
+5. Save the view.
 
-```powershell
-npm run check-schema
-```
+✅ **Check:** both new properties appear in **Contact properties** with internal
+names **exactly** `mn_dm_reply` and `mn_dm_last_inbound_at`, and the view exists
+(it's empty until Step 9).
 
-Runs [`scripts/check-schema.js`](scripts/check-schema.js).
-
-✅ **Check:** it prints `Schema OK: every field this repo uses is present.`
-
-| If you see | Fix |
-|---|---|
-| `MIGHTY_NETWORK must be the bare mn.co subdomain` | You entered a domain or URL. Use just `your-community`. |
-| `Schema download failed: HTTP 404` | Wrong subdomain. Recheck 1d. |
-| `Missing from the live schema: ...` | Mighty changed the API. Don't send until the code is updated. |
-
-### Step 4: Authorize once
-
-*About 5 minutes.*
-
-**4a. Open a private browser window** (Chrome: **Ctrl+Shift+N**; Safari/Firefox:
-**File → New Private Window**) and sign in to your Mighty Network **as the
-sending account from Step 1**. A private window keeps you from approving as
-whoever your normal browser is signed in as.
-
-**4b. Start the sign-in script** in the terminal:
-
-```powershell
-npm run authorize
-```
-
-Runs [`scripts/authorize.js`](scripts/authorize.js).
-
-It prints:
-
-```text
-Open this URL, sign in as the Host account DMs should come from, and approve:
-
-https://your-community.mn.co/oauth/authorize?response_type=code&client_id=...&redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Foauth%2Fcallback&scope=...&state=...&code_challenge=...&code_challenge_method=S256
-
-Waiting for the redirect on http://localhost:3000/oauth/callback ...
-```
-
-Leave the terminal running.
-
-**4c. Open the URL.** Copy the whole `https://...` line (it's long) and paste it
-into the private window's address bar.
-
-**4d. Approve.** If the consent screen appears, it names your application and
-the permissions it asks for. Click the approve button (wording may differ). If
-you checked **Skip consent screen** and the scopes allow it, Mighty sends you
-straight on without a screen.
-
-**4e. Watch the redirect.** The browser goes to
-`http://localhost:3000/oauth/callback?code=...&state=...` and shows a plain page
-reading **`Authorized. You can close this tab.`** The terminal prints:
-
-```text
-Saved tokens to C:\...\mighty-networks-hubspot-dm-integration\.tokens.json
-Granted scopes: read:userinfo write:chats host:read:network_members
-Next: npm run whoami
-```
-
-and the script exits.
-
-✅ **Check:** `Granted scopes:` lists what you set in `MIGHTY_SCOPES`, and
-`.tokens.json` now exists in the repo folder.
-
-If `write:chats` wasn't granted, the script adds:
-`Note: write:chats was not granted. DMs may still work on your Network; test with npm run send before relying on it.`
-That's expected if your dialog didn't offer the scope. Step 6 proves whether
-sending works.
-
-> ⚠️ **What can go wrong here:**
->
-> | You see | Cause | Fix |
-> |---|---|---|
-> | Browser shows `Authorization failed: invalid_scope` | `MIGHTY_SCOPES` asks for a scope the app doesn't have | Remove it from `.env` (usually `write:chats`), then `npm run authorize` again |
-> | Mighty shows a redirect URI error, or `redirect_uri_mismatch` | `.env` and the application card differ by a character | Make them identical, including port and path |
-> | Browser shows `State mismatch. Start again with npm run authorize.` | You opened a URL from an earlier run | Use the URL the *current* run printed |
-> | `Token exchange failed: invalid_client` | Wrong or partly copied ID or secret, or a secret set for a Public app | Recopy with the copy icons. Leave the secret blank for Public apps. |
-> | `EADDRINUSE` when the script starts | Something else is using port 3000 | Stop it, or change the port in **both** the application's Redirect URI and `MIGHTY_REDIRECT_URI` |
-> | The sign-in page won't let you in | The account isn't a Host, and a `host:` scope was requested | Use a Host account (Step 1) |
->
-> Authorization codes are single-use and expire within minutes. After any
-> failure, start again from 4b to get a fresh one.
-
-You won't need to do this again unless the refresh token is revoked or expires.
-When that happens, scripts stop with `invalid_grant`. Run `npm run authorize`
-again.
-
-### Step 5: Confirm who you'll send as
+### Step 6: Prove DM reads work
 
 *About 2 minutes.*
 
-Run:
+In **Setup.gs**, run **`dmPeekInbox`**. It reads three DMs and their newest
+messages, and writes nothing anywhere.
 
-```powershell
-npm run whoami
+✅ **Check:** the log looks like this:
+
+```
+Inbox of Community Team: 25 conversation(s) on page 1, more pages: true
+- Alex Rivera | last message 2026-09-01T18:07:12Z | group: false | 25 message(s) readable
+    2026-09-01T18:07:12Z  Alex Rivera: Thanks, see you Thursday!
+    2026-09-01T17:55:40Z  Community Team: Hi Alex, ...
+- ...
 ```
 
-Runs [`scripts/whoami.js`](scripts/whoami.js).
+Each conversation says *"N message(s) readable"*, and you can see real text.
 
-```text
-Sending as:   Community Team
-GlobalID:     TWVtYmVyOjEyMzQ1
-Resource ID:  12345
-Scopes:       read:userinfo write:chats host:read:network_members
+> ⚠️ **If this errors, stop here.** Mighty has returned
+> `INTERNAL_SERVER_ERROR` when listing *space* chat messages. This step confirms
+> *DM* message lists work for your account. A `FORBIDDEN` error means the token
+> can't read chats: ask Mighty support which scope enables chat for your
+> Network, add it to the app and `DM_SCOPES`, and redo Step 4.
+
+### Step 7: Confirm member ids match
+
+*About 10 minutes.*
+
+**7a. Run the check.** In **Setup.gs**, run **`dmVerifyIdMapping`**. For up to
+10 one-to-one DMs it logs:
+
+```
+Alex Rivera
+   DM participant: User/12345678, resourceId 12345678
+   member(id: 12345678) is the same person: YES
+   HubSpot contact with mn_member_id = 12345678: https://app.hubspot.com/contacts/12345678/record/0-1/987654321
+...
+Checked 10 DM(s): id round-trips for 10, HubSpot contact found for 9.
+Open each HubSpot link and confirm it is the same person as the Mighty name above.
+If every one matches, run dmConfirmIdMapping(). If any is wrong, stop: don't confirm.
 ```
 
-✅ **Check:** **Sending as** is the account from Step 1.
+**7b. Open every HubSpot link** (copy it from the log into a browser tab) and
+confirm the contact is the same person as the Mighty name above it.
 
-If it's anyone else, delete `.tokens.json` from the repo folder and repeat
-Step 4, making sure the private window is signed in as the right account.
+- **same person: NO** on any row, or a HubSpot link that opens someone else:
+  **stop.** Notes would land on the wrong contacts and replies would go to the
+  wrong members. Fix the `mn_member_id` values first.
+- **`none`** for a row: that member has no contact with their `mn_member_id`.
+  Fine for a few; their DMs will go to the **DM Unmatched** tab. If *every* row
+  says `none`, `mn_member_id` isn't filled in, or `HS_MEMBER_ID_PROP` in
+  [`Config.gs`](Config.gs) doesn't match its internal name.
+- `WARNING: 2+ contacts share mn_member_id ...`: duplicate contacts. Merge them in
+  HubSpot.
 
-> ⚠️ `Mighty API returned non-JSON, HTTP 403` means `MIGHTY_USER_AGENT` is
-> missing or empty. `No tokens found. Run: npm run authorize` means Step 4
-> didn't finish.
+**7c. Confirm.** When every link matches, run **`dmConfirmIdMapping`** (also in
+**Setup.gs**).
 
-### Step 6: Send a test DM to yourself on a second account
+✅ **Check:** the log reads `Confirmed. HubSpot writes are unlocked. Next: dmBaselineInbox().`
 
-*About 5 minutes.*
+Until you confirm, `dmPollInbox` and `dmPollOutbox` refuse to run and log
+`Blocked: run dmVerifyIdMapping() ...`.
 
-Use the ordinary member account you control, **not** the sending account.
-Messaging yourself is skipped (`SKIPPED_SELF_MESSAGE`).
+### Step 8: Record where the inbox stands
 
-**6a. Dry run.** Nothing is sent:
+*About 5 minutes, longer for a big inbox.*
 
-```powershell
-npm run send -- --to test-member@example.com --text "Testing the DM integration.\nLine two."
+In **Setup.gs**, run **`dmBaselineInbox`**. It records the newest message time of
+every existing conversation, so only DMs that arrive **after** this point are
+copied. Years of old welcome messages don't land in HubSpot.
+
+A big inbox takes several runs (each run stops itself after about 4 minutes).
+If the log says:
+
+```
+Recorded 250 more conversation(s) (250 total). NOT done: run dmBaselineInbox() again.
 ```
 
-Runs [`scripts/send-dm.js`](scripts/send-dm.js).
+click **Run** again, until it says:
 
-(The `--` after `npm run send` is needed so npm passes the flags to the script.
-Type `\n` literally; the script turns it into a line break.)
-
-```text
-From: Community Team
-To:   Test Member (67890)
-Text:
-Testing the DM integration.
-Line two.
-
-Dry run. Add --send to deliver it.
+```
+Baseline done: 612 conversation(s). Only DMs after 2026-09-29 14:05 ET will be copied. Next: test (README step 8), then dmInstallTriggers().
 ```
 
-Check that **From** is the sending account and **To** is your test account.
+(The "step 8" in that message means the test in Step 9 below.)
 
-If it stops with `No member found for "test-member@example.com" (or your token cannot look them up)`,
-your plan or the member's privacy settings hide emails from the API. Use the
-member's **numeric ID** instead: `--to 67890`. You can find it in the Admin
-members list or in the member's profile address (wording may differ).
+✅ **Check:** the log says **Baseline done**. In the sheet, the hidden
+`_dm_state` tab now exists: click the **All sheets** list button at the bottom
+left of the sheet to see it. Don't edit it.
 
-**6b. Send it for real.** Same command, plus `--send`:
+### Step 9: Test end to end
 
-```powershell
-npm run send -- --to test-member@example.com --text "Testing the DM integration.\nLine two." --send
+*About 15 minutes.*
+
+Use your ordinary test member account. It needs a HubSpot contact with its
+`mn_member_id` filled in.
+
+**9a. Inbound (Mighty to HubSpot).**
+1. In a private window, sign in to Mighty as the **test** account and send the
+   sending account a DM: `inbound test`.
+2. In Apps Script, open **Inbox.gs** and run **`dmPollInbox`**.
+
+   ```
+   Inbox: 1 conversation(s) with new messages, 1 note(s) added, 0 message(s) to 'DM Unmatched', 1 page(s) read.
+   ```
+
+3. In HubSpot, open the test contact.
+
+✅ **Check (9a):** the contact's activity timeline has a note headed **Mighty DM
+from [test member's name]** with the time and the text `inbound test`, and
+**Mighty DM last inbound at** is set. The sheet's **DM Log** tab has a row with
+direction `inbound` and status `noted`, and the contact appears in your
+**Mighty DMs: last 7 days** view.
+
+If the log says `0 note(s) added, 1 message(s) to 'DM Unmatched'`, the test
+contact's `mn_member_id` is missing or different. The message text is in the
+**DM Unmatched** tab.
+
+**9b. Outbound (HubSpot to Mighty).**
+1. On the test contact in HubSpot, find **Mighty DM reply** (sidebar, or **View
+   all properties** and search). Type `outbound test` and save the field (click
+   outside it, or click **Save** if HubSpot shows one).
+2. Wait about 30 seconds: HubSpot's search takes a moment to see new values.
+3. In Apps Script, open **Outbox.gs** and run **`dmPollOutbox`**.
+
+   ```
+   Outbox: 1 sent, 0 skipped, 0 failed/unknown.
+   ```
+
+   If the log shows only *Execution started* and *Execution completed*, the
+   script found no pending reply yet. Wait a minute and run it again.
+
+✅ **Check (9b):** the test account's Mighty inbox has `outbound test` from the
+sending account, in the same conversation as 9a. The contact has a note **Mighty
+DM sent by [sending account] via HubSpot**, **Mighty DM reply** is empty again,
+and **DM Log** has a row with direction `outbound (HubSpot)` and status `sent`.
+
+If the note says **Mighty DM NOT sent (...)**, the reason follows it. See the
+table under "Using it".
+
+**9c. No echo.** Open **Inbox.gs** again and run **`dmPollInbox`**.
+
+✅ **Check (9c):** no second note for `outbound test` appears on the contact.
+The inbox sync recognizes replies it sent itself.
+
+**9d. Reply in the Mighty app (optional).** As the sending account, type a reply
+to the test account in the Mighty app, then run `dmPollInbox`. The contact gets
+a note headed **Mighty DM sent by [sending account] (in the Mighty app)**, so the
+timeline shows both sides.
+
+### Step 10: Turn it on
+
+*About 20 minutes, most of it waiting.*
+
+**10a. Install the triggers.** In **Setup.gs**, run **`dmInstallTriggers`**.
+
+✅ The log reads `Installed: dmPollInbox every 15 min, dmPollOutbox every 5 min.`
+(It removes its own old triggers first, so running it twice doesn't duplicate
+them.)
+
+**10b. See them on the Triggers page.** Click **Triggers** (alarm-clock icon) in
+the left rail. The page reads *"Showing 2 triggers"*, with columns **Owned by**,
+**Last run**, **Deployment**, **Event**, **Function** and **Error rate**:
+
+| Owned by | Deployment | Event | Function |
+|---|---|---|---|
+| Me | Head | Time-based | `dmPollInbox` |
+| Me | Head | Time-based | `dmPollOutbox` |
+
+Don't add triggers with **+ Add Trigger** on this page. `dmInstallTriggers`
+manages exactly these two.
+
+**10c. Watch the first runs.** After 5 to 15 minutes, click **Executions** (the
+list icon with a ▶) in the left rail. Each trigger run appears as a row with its
+function name, a type of time-driven, and a status (wording may differ). Click a
+row to see its log lines. Expect `dmPollOutbox` about every 5 minutes and
+`dmPollInbox` about every 15.
+
+**10d. Check the status.** In **Setup.gs**, run **`dmStatus`**.
+
+✅ **Check:** the log includes:
+
+```
+DM_REFRESH_TOKEN set: true
+DM_HS_TOKEN set: true
+ID mapping confirmed: true
+Baseline done: true
+Triggers: dmPollInbox, dmPollOutbox
 ```
 
-```text
-Sent. Message <id> in conversation <id>
-```
+(The order of the two trigger names may differ.)
 
-If it prints `Not sent: <reason> (<OUTCOME>)` instead, look the outcome up in
-[section 6](#6-why-a-dm-might-not-be-sent).
+**10e. Failure emails.** Google emails the project owner when a trigger fails
+(daily by default). To change that, click the pencil on a trigger's row on the
+**Triggers** page and adjust the failure notification setting (wording may
+differ). Keep it on: an expired Mighty sign-in shows up there first, as
+`Mighty token refresh failed ... invalid_grant`.
 
-**6c. Look at it in Mighty.** In the private window, sign out and sign in as the
-test account (or use a second private window). Open your chats or messages.
-
-✅ **Check:** the test account has the message from the sending account, with
-**Line two.** on its own line. Running 6b again posts into the **same**
-conversation rather than starting a new one.
-
-`--to` also accepts a GlobalID. Repeat `--to` to start a group DM.
-
-### Step 7: Send to a list
-
-*About 15 minutes, plus sending time.*
-
-**7a. Make the recipients CSV.** Copy [`examples/recipients.example.csv`](examples/recipients.example.csv)
-to a new file, e.g. `recipients.csv`, and replace the rows. The file needs a
-`recipient` column (email or numeric member ID), plus any columns your message
-uses:
-
-```csv
-recipient,first_name,plan
-alex@example.com,Alex,Annual
-jordan@example.com,,Monthly
-1234567,Sam,Monthly
-```
-
-If you edit it in Excel or Google Sheets, save or download it as **CSV**.
-
-**7b. Write the message.** Copy [`examples/message.example.txt`](examples/message.example.txt)
-to `message.txt` and edit it:
-
-```text
-Hi {{first_name}}, it's been a little while since we've seen you in the community.
-```
-
-- `{{first_name}}` uses the CSV column, and falls back to the first word of the
-  member's Mighty profile name when the column is blank (Jordan above).
-- `{{name}}` is the full Mighty profile name.
-- Any other CSV column works, e.g. `{{plan}}`.
-- A `message` column on a row overrides the template for that row.
-- A blank line starts a new paragraph.
-
-**7c. Dry run** and read every preview:
-
-```powershell
-npm run send-batch -- --csv recipients.csv --template-file message.txt
-```
-
-Runs [`scripts/send-batch.js`](scripts/send-batch.js).
-
-```text
-DRY RUN as Community Team: 3 rows, 0 already sent per send-log.csv
-
-[dry-run] Alex Rivera <alex@example.com>
-    Hi Alex, it's been a little while since we've seen you in the community.
-
-[dry-run] Jordan Lee <jordan@example.com>
-    Hi Jordan, it's been a little while since we've seen you in the community.
-
-[failed] 1234567 - No member found (or lookup not permitted)
-
-Done: {"sent":0,"skipped":0,"failed":1,"alreadySent":0,"dryRun":2}
-Nothing was sent. Re-run with --send (try --limit 1 first).
-```
-
-Fix every `[failed]` row before sending:
-
-| Reason | Fix |
-|---|---|
-| `No member found (or lookup not permitted)` | Wrong email or ID, or email lookup is refused. Use the numeric member ID. |
-| `Missing value for {{plan}}` | That row has no value for a placeholder. Fill the cell or change the template. |
-| `Row has no recipient` | Empty `recipient` cell |
-
-Dry-run rows are **not** written to the log, so you can dry-run as often as you
-like.
-
-**7d. Send one** for real:
-
-```powershell
-npm run send-batch -- --csv recipients.csv --template-file message.txt --send --limit 1
-```
-
-The first line now reads `SENDING as ...`, and the row shows `[sent]`. Check
-that member's message in Mighty if you can (or send the first one to your test
-account by putting it first in the CSV).
-
-**7e. Send the rest.** Same command, without `--limit`:
-
-```powershell
-npm run send-batch -- --csv recipients.csv --template-file message.txt --send
-```
-
-The member from 7d is skipped because the log already has them. The first line
-says so: `... 3 rows, 1 already sent per send-log.csv`.
-
-✅ **Check:** the final `Done:` line has `"sent"` equal to the number of members
-you expected, and `send-log.csv` has one `sent` row per member.
-
-Every result is appended to `send-log.csv`:
-
-| Column | Meaning |
-|---|---|
-| `status` | `sent`, `skipped` (Mighty declined, with `outcome` and `reason`) or `failed` (lookup failed, missing placeholder value, or an error) |
-| `memberId` | The member's numeric resource ID |
-| `messageId`, `conversationId` | GlobalIDs of what was sent |
-
-> ⚠️ **Keep the log. It's what prevents double sends.** If a run stops for any
-> reason (a crash, a closed laptop, a throttle), run the **same command with the
-> same log file** again and it picks up where it left off. For each new
-> campaign, use a new log name, e.g. `--log send-log-october.csv`. Otherwise
-> anyone who got campaign 1 is skipped for campaign 2.
-
-Pacing: 3 seconds between sends by default (`--delay-ms` to change). When Mighty
-answers `THROTTLED`, the sender waits 1, 2, 3, then 4 minutes before giving up on
-that row. An authentication or permission error stops the whole run, since
-every remaining row would fail the same way.
+**To pause the sync,** run **`dmRemoveTriggers`** in **Setup.gs**. The log reads
+`Removed 2 DM trigger(s). State and logs are untouched.` Run
+`dmInstallTriggers` to resume; nothing is lost or re-sent.
 
 ---
 
-## 5. Using the code from your own project
+## Using it
 
-```js
-import { loadConfig } from './src/config.js';
-import { createClient } from './src/graphql-client.js';
-import { resolveRecipient, sendDirectMessage } from './src/direct-messages.js';
+**Answering a DM in HubSpot:** open the contact, type into **Mighty DM reply**,
+save. Leave a blank line between paragraphs. It goes out within about 5 minutes,
+then the property clears and a note records exactly what was sent.
 
-const request = createClient(loadConfig());
+**Starting a conversation:** same thing. If the member has no DM thread with the
+sending account yet, one is created.
 
-const member = await resolveRecipient(request, 'alex@example.com'); // or 1234567, or a GlobalID
-if (!member) throw new Error('No such member');
+**A useful view:** contacts where **Mighty DM last inbound at** is in the last 7
+days, sorted newest first. Those are the members who wrote in recently.
 
-const result = await sendDirectMessage(request, [member.id], 'Hi Alex!');
-// { status: 'sent', outcome: 'SENT', conversationId, messageId, sentAt }
-// { status: 'skipped', outcome: 'SKIPPED_RECIPIENT_CHAT_DISABLED', reason: 'Recipient has turned off private chat' }
-```
+**When a reply isn't sent,** the contact gets a note "Mighty DM NOT sent (...)"
+with the reason, the text is kept in the note, and the property clears:
 
-The imports are [`src/config.js`](src/config.js), [`src/graphql-client.js`](src/graphql-client.js) and [`src/direct-messages.js`](src/direct-messages.js).
-
-`createClient` accepts a `tokenStore: { load(), save(tokens) }` if you'd rather
-keep tokens in a database or secret manager than in `.tokens.json`. Persist
-every `save`: refresh tokens rotate.
-
-Other helpers:
-
-| Function | What it does |
+| Reason | What to do |
 |---|---|
-| `replyInConversation(request, conversationId, text, { replyToId })` | Post into a known conversation, or into the thread under one message |
-| `listDirectMessages(request, { first, after })` | The sending account's own DMs, newest first |
-| `whoAmI(request)` | The member the token acts as |
+| Member has turned off private chat | Reach them another way |
+| Member is a Limited Member | Private chat doesn't apply to them |
+| Sending account is not a Host | Re-sign in as a Host (Step 4) |
+| Contact has no mn_member_id | Fill it in (the roster sync normally does), then retype |
+| A previous run stopped mid-send | Check the Mighty thread; retype only if it isn't there |
 
 ---
 
-## 6. Why a DM might not be sent
+## How it avoids the mistakes members would notice
 
-Mighty returns one of these instead of sending. The batch log shows the reason
-in plain words.
+- **No double sends.** Each reply is keyed to the moment it was typed (HubSpot's
+  timestamp for that edit), not its wording, and logged as "sending" before the
+  API call. A reply already sent is never sent again, even if clearing the
+  property fails. If a run dies mid-send, the reply is not retried
+  automatically; the rep is asked to check.
+- **No duplicate notes.** Each conversation's newest copied message is recorded
+  after every conversation, and replies sent from HubSpot are skipped when the
+  inbox sync sees them come back.
+- **No missed messages.** If a run is cut short or crashes, the next run scans the
+  whole inbox once instead of stopping early.
+- **No history dump.** Nothing before the baseline is copied.
+- **No wrong recipients.** Nothing is written or sent until a person has checked
+  real id matches (Step 7).
+- **Mighty staff/test accounts** (`@mightynetworks.com`, `tfbnw.net`) are ignored.
+
+---
+
+## Limits
+
+- **One inbox.** Only the sending account's DMs. A second Host inbox needs a
+  second copy of this project with its own sign-in.
+- **1:1 DMs only.** Group DMs are skipped and noted once in the DM Log.
+- **Text only.** Attachments and reactions aren't copied; the note keeps the text.
+- **Up to 100 new messages per conversation per run.** More than that logs a warning.
+- **Latency:** up to 15 minutes in, 5 minutes out. Mighty has no DM webhook.
+- **Quotas:** Mighty's Headless API page says quotas "are currently for
+  informational purposes and are not yet enforced." If that changes, lengthen the
+  trigger intervals.
+
+---
+
+## Sheet tabs
+
+| Tab | What it holds |
+|---|---|
+| `DM Log` | Every message handled, both directions, with the HubSpot note id |
+| `DM Unmatched` | DMs from members with no HubSpot contact, text included |
+| `_dm_state` (hidden) | Per conversation: newest message copied |
+| `_dm_outbox` (hidden) | Every reply's status: sending / sent / skipped / failed / unknown |
+
+Don't edit the hidden tabs by hand. Deleting `_dm_outbox` removes the double-send
+protection for anything in flight.
+
+---
+
+## Why a DM might not be sent
+
+Mighty returns one of these instead of sending. The contact gets a Note reading
+*"Mighty DM NOT sent (skipped): <reason>"*, the `DM Log` tab records it, and the
+reply property clears, so nobody retypes it thinking it was lost.
 
 | Outcome | What to do |
 |---|---|
 | `SKIPPED_RECIPIENT_CHAT_DISABLED` | The member turned private chat off. Respect it; reach them another way. |
 | `SKIPPED_RECIPIENT_LIMITED_MEMBER` | Limited Members can't receive private chat. |
-| `SKIPPED_SENDER_NOT_HOST` | Re-authorize with a Host account (Step 1). |
+| `SKIPPED_SENDER_NOT_HOST` | Sign in again with a Host account (Step 4). |
 | `SKIPPED_SENDER_CHAT_DISABLED` | Turn private chat on for the sending account. |
 | `SKIPPED_NETWORK_CHAT_DISABLED` | Turn private chat on for the Network. |
-| `SKIPPED_SELF_MESSAGE` | The recipient is the sending account. |
+| `SKIPPED_SELF_MESSAGE` | The contact is the sending account. |
 | `SKIPPED_CONVERSATION_UNAVAILABLE` | The member left, or the conversation no longer exists. |
 
----
-
-## 7. Mighty API behavior the docs don't spell out
+## Mighty API behavior the docs don't spell out
 
 The full list, with the exact operations and scopes, is in
 [`docs/API-NOTES.md`](docs/API-NOTES.md). The ones that shape this code:
 
 - **There is no brand or admin sender.** A token reaches only its own user's
-  conversations, so outreach always comes from one real account.
+  conversations, so the sync reads and replies as one real account.
 - **The consent screen can't be skipped for chat scopes**, even on applications
-  configured to skip it. There's no silent first authorization.
+  configured to skip it. The first sign-in (Step 4) needs a person to click
+  Approve; after that the refresh token keeps the triggers running.
 - **Requesting any `host:` scope blocks non-Hosts from signing in at all.**
 - **GraphQL errors come back with HTTP 200.** Mutations also carry their own
   `errors` list. Both are checked.
-- **No `User-Agent`, no API.** `api.mn.co` returns an HTML bot challenge with a 403.
-- **`memberByEmail` returns `null` both for "no such member" and for "you're not
-  allowed to see that"** (plan, role, or the member's email-sharing consent).
-  Failed lookups are rate limited. Member IDs from Mighty webhooks or the Admin
-  REST API are the more reliable key.
-- **Member activity is a separate feature.** `Member.lastActiveAt` and
-  `Membership.lastActiveAt` exist for Host tokens, but this module doesn't use
-  them. If you target members by activity, build that list separately and hand
-  it to `send-batch` as a CSV.
+- **No `User-Agent`, no API.** `api.mn.co` returns an HTML bot challenge with a 403
+  (see `DM_USER_AGENT` in [`Config.gs`](Config.gs)).
+- **Members are matched by numeric member id, never by email.** Mighty's email
+  lookup returns `null` both for "no such member" and for "you're not allowed to see
+  that", and failed lookups are rate limited. That's why contacts need
+  `mn_member_id`.
+- **Member activity is a separate feature.** `Member.lastActiveAt` exists for Host
+  tokens, but this sync doesn't use it.
 
----
+## When you don't need this
 
-## 8. When you don't need this
+Mighty's own **automations** have a *Send a direct message* action. If the trigger
+lives inside Mighty (a member joins, buys a plan, gets a tag) and nobody needs to see
+or answer the conversation in HubSpot, an automation is simpler and needs no code.
 
-Mighty's own **automations** have a *Send a direct message* action. If the
-trigger lives inside Mighty (a member joins, buys a plan, gets a tag), an
-automation is simpler and needs no code.
+Use this when your team works in HubSpot and needs member conversations on the
+contact record, with replies sent from there.
 
-Use this repo when the audience or timing is decided **outside** Mighty: a CRM
-list, a spreadsheet, a payment event from another system, or a one-off campaign
-you want to review row by row before sending.
+## Troubleshooting
 
----
-
-## 9. Troubleshooting
-
-| Symptom | Cause | Fix |
+| Log says | Cause | Fix |
 |---|---|---|
-| `MIGHTY_NETWORK must be the bare mn.co subdomain` | A domain or URL in `MIGHTY_NETWORK` | Use just `my-community` |
-| `redirect_uri_mismatch` | Registered URI differs by a character | Copy it exactly, including port and path |
-| `invalid_scope` | App isn't allowed a requested scope | Add it to the OAuth application, or remove it from `MIGHTY_SCOPES` |
-| `invalid_client` | Wrong ID/secret, or a secret sent for a Public app | Recheck; leave `MIGHTY_CLIENT_SECRET` blank for Public apps |
-| `invalid_grant` | Refresh token revoked or expired | `npm run authorize` |
-| `Mighty API returned non-JSON, HTTP 403` | No `User-Agent`, or the client is blocked | Set `MIGHTY_USER_AGENT` |
-| `No member found` for an email you know exists | Refused lookup (plan, consent, token not a Host) | Use the member's numeric ID |
-| Every row `skipped` with `SKIPPED_SENDER_NOT_HOST` | Authorized as a non-Host | Step 1, then Step 4 |
-| `FORBIDDEN` | Token lacks the scope for the operation | Check `npm run whoami` scopes |
-| `THROTTLED` repeatedly | Sending too fast | Raise `--delay-ms` |
-| Error mentioning a missing field | Mighty changed the schema | `npm run check-schema` |
+| `Blocked: run dmVerifyIdMapping()` | Step 7 not done | Do Step 7 |
+| `Blocked: run dmBaselineInbox()` | Step 8 not finished | Run it until "Baseline done" |
+| `Mighty token refresh failed ... invalid_grant` | Sign-in revoked or expired | Redo Step 4 |
+| `invalid_client` | Wrong or truncated client id/secret | `dmCheckCreds`, re-copy them |
+| `HubSpot 401/403` | `DM_HS_TOKEN` wrong or missing a scope | Step 2 |
+| `Mighty returned non-JSON, HTTP 403` | Blocked request | Check `DM_USER_AGENT` in Config |
+| `did not resolve as a DirectMessage` | Mighty changed the DM type | Rerun `dmPeekInbox`; recheck the schema |
+| Replies never send, no error | Property internal name typo | Step 5 names must match exactly |
+| `WARNING: N+ contacts share mn_member_id` | Duplicate contacts | Merge them in HubSpot |
 
----
-
-## 10. Testing
-
-```powershell
-npm test
-```
-
-22 unit tests with a fake API; nothing is sent to Mighty. They pin the failure
-modes that matter: a skipped DM must never count as sent, a re-run must never
-double-message, a half-filled template must never go out, a rotated refresh
-token must be saved, and an auth failure must stop a batch.
-
-```powershell
-npm run check-schema
-```
-
-Runs [`scripts/check-schema.js`](scripts/check-schema.js).
-
-Downloads your Network's public schema (no token) and confirms every type,
-field and enum value this repo uses still exists. Run it before a large send.
-
----
-
-## 11. Security
-
-- **`.tokens.json` can read and send a real person's private messages.** It's
-  gitignored, and on macOS/Linux it's written readable by your user only. Never commit it, paste it
-  into chat tools, or copy it to shared drives.
-- **`send-log.csv` and your recipient CSVs contain member emails.** They're
-  gitignored; treat them as personal data.
-- Keep the Client Secret in `.env` (gitignored) or a secret manager.
-- [`authorize.js`](scripts/authorize.js) checks the OAuth `state` value on the redirect and uses PKCE, so
-  a forged redirect can't plant someone else's token.
-- To cut access: revoke the token at `/oauth/revoke`, remove the app under
-  **Connected Apps** in the sending account's settings, or delete the OAuth
-  application in Network Admin.
-- Only message members who expect to hear from you, and honor
-  `SKIPPED_RECIPIENT_CHAT_DISABLED`. It's the member saying no.
+**Security:** `DM_REFRESH_TOKEN` can read and send this account's private messages.
+It lives only in Script Properties. Never paste it anywhere. To cut access, delete
+the OAuth application in Mighty Admin, or remove it under the sending account's
+Connected Apps.

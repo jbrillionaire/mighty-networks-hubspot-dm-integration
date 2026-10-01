@@ -2,17 +2,17 @@
   API-NOTES.md -- what the Mighty API actually does for direct messages
   Author:  Jibril Sulaiman
   Created: 2026-09-28
-  What:    The exact operations, scopes and behaviors this repo relies on,
-           read from the live SDL on 2026-09-28 and validated with graphql-js.
+  What:    The exact operations, scopes and behaviors the sync relies on,
+           read from the live SDL on 2026-09-28.
   Why:     The docs summarize chat in one paragraph. The schema descriptions
            hold the details that decide whether a message is really sent.
 -->
 
 # Mighty API notes: direct messages
 
-Verified against the published SDL on **2026-09-28**. Every query and mutation
-in [`src/direct-messages.js`](../src/direct-messages.js) validated with no
-errors against that schema. Re-check any time with `npm run check-schema`.
+Read from the published SDL on **2026-09-28**. The queries and the mutation are
+the ones in [`Mighty.gs`](../Mighty.gs). If Mighty changes the schema, compare
+them against the public SDL URL below.
 
 ## Endpoints
 
@@ -33,12 +33,11 @@ works for members browsing, but use the `mn.co` subdomain in configuration.
 
 | Operation | Purpose | Required scope |
 |---|---|---|
-| `me` | Who the token sends as | (any valid token) |
-| `network.memberByEmail(email:)` | Email to member | `host:read:network` or `host:read:network_members` (or `host:write:network_members`) |
-| `network.member(id:)` | Numeric resource ID or GlobalID to member | `read:network`, `host:read:network`, `host:read:network_members` or `host:write:network_members` |
-| `createConversation(input:)` | Start a DM, or post into the existing one with the same people | `write:chats` |
-| `createDirectMessage(input:)` | Post into a known conversation or reply thread | `write:chats` |
-| `me.directMessages(first:, after:)` | The sender's own DM list | `read:chats` or `write:chats` |
+| `me` (query `Me`) | Who the token reads and sends as | (any valid token) |
+| `me.directMessages(first:, after:)` (query `Inbox`) | The Host's own DM list, newest first | `read:chats` or `write:chats` |
+| `node(id:)` > `... on DirectMessage { messages }` (query `Messages`) | The messages in one conversation | `read:chats` or `write:chats` |
+| `network.member(id:)` (query `Member`) | Numeric resource ID or GlobalID to member, with `privateChatEnabled` and `isLimitedMember` | `read:network`, `host:read:network`, `host:read:network_members` or `host:write:network_members` |
+| `createConversation(input:)` (mutation `Send`) | Send a reply: starts a DM, or posts into the existing one with the same people | `write:chats` |
 
 `write:chats` includes everything `read:chats` grants.
 
@@ -48,8 +47,8 @@ works for members browsing, but use the `mn.co` subdomain in configuration.
 |---|---|
 | `recipientIds: [ID!]!` | **GlobalIDs**, excluding yourself. More than one makes a group chat. |
 | `text: String!` | HTML is sanitized server-side. |
-| `preserveParagraphSpacing` | `true` turns bare newlines into line breaks. This repo sends `true`. |
-| `reportSkipsAsOutcomes` | `true` returns a coded `outcome` instead of raising. This repo always sends `true`. |
+| `preserveParagraphSpacing` | `true` turns bare newlines into line breaks. The sync sends `true`. |
+| `reportSkipsAsOutcomes` | `true` returns a coded `outcome` instead of raising. The sync always sends `true`. |
 | `title` | Only for a new group conversation. |
 | `assetIds`, `embeddedLinkId` | Attachments and link previews (not used yet). |
 
@@ -91,7 +90,8 @@ errors. Both are checked.
    *and* for a refused lookup (wrong role, plan without member-email
    visibility, or the member didn't consent to share their email). Failed
    lookups are rate limited per Network and raise `THROTTLED` past the limit.
-   Numeric member IDs from webhooks or the Admin REST API avoid this.
+   Numeric member IDs from webhooks or the Admin REST API avoid this, which is
+   why the sync matches on `mn_member_id` and never looks members up by email.
 8. **OAuth applications need the Scale plan or above** (Network Admin >
    Integrations > OAuth Applications).
 9. **Query cost limit is 1,500.** Connections page at most 50 at the top level
@@ -100,12 +100,11 @@ errors. Both are checked.
 ## Deprecations to watch
 
 - `PrivateMessage.user` is deprecated in favor of `member`, removal date
-  **2026-12-15**. This repo doesn't use it.
+  **2026-12-15**. The sync doesn't use it.
 
 ## No-code alternative
 
 Mighty's own **automation rules** include a `SEND_DIRECT_MESSAGE` action. If a
 trigger inside Mighty is enough (a member joins, buys a plan, gets a tag), an
-automation may be simpler than this repo. Use the API when the audience or
-timing is decided outside Mighty: a CRM segment, a spreadsheet, a webhook from
-another system.
+automation may be simpler than this sync. Use the API when the conversation has
+to be seen and answered from outside Mighty, such as in HubSpot.
