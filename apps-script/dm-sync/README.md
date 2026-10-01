@@ -34,15 +34,15 @@ roster sync or a Mighty webhook usually fills it.
 
 | File | What it does |
 |---|---|
-| `Config.gs` | Network, sheet id, property names, limits |
-| `Auth.gs` | One-time Mighty sign-in; token refresh with rotation |
-| `Mighty.gs` | The Mighty API calls: inbox, messages, member lookup, send |
-| `HubSpot.gs` | Contact lookup by `mn_member_id`, notes, property updates |
-| `State.gs` | The sheet tabs: state, send ledger, logs |
-| `Inbox.gs` | Mighty to HubSpot (`dmPollInbox`) |
-| `Outbox.gs` | HubSpot to Mighty (`dmPollOutbox`) |
-| `Setup.gs` | Checks, baseline, triggers, status |
-| `tests/` | Local tests (`node --test tests/` from this folder), never pasted into Apps Script |
+| [`Config.gs`](Config.gs) | Network, sheet id, property names, limits |
+| [`Auth.gs`](Auth.gs) | One-time Mighty sign-in; token refresh with rotation |
+| [`Mighty.gs`](Mighty.gs) | The Mighty API calls: inbox, messages, member lookup, send |
+| [`HubSpot.gs`](HubSpot.gs) | Contact lookup by `mn_member_id`, notes, property updates |
+| [`State.gs`](State.gs) | The sheet tabs: state, send ledger, logs |
+| [`Inbox.gs`](Inbox.gs) | Mighty to HubSpot (`dmPollInbox`) |
+| [`Outbox.gs`](Outbox.gs) | HubSpot to Mighty (`dmPollOutbox`) |
+| [`Setup.gs`](Setup.gs) | Checks, baseline, triggers, status |
+| [`tests/`](tests/) | Local tests (`node --test tests/` from this folder), never pasted into Apps Script |
 
 ---
 
@@ -97,11 +97,11 @@ The left rail of the editor has six icons, top to bottom: **Overview** (ⓘ),
 
 | File | Functions you'll run from it |
 |---|---|
-| `Auth.gs` | `dmCheckCreds`, `dmLogAuthorizeUrl` |
-| `Setup.gs` | `dmWhoAmI`, `dmPeekInbox`, `dmVerifyIdMapping`, `dmConfirmIdMapping`, `dmBaselineInbox`, `dmInstallTriggers`, `dmRemoveTriggers`, `dmStatus`, plus the temporary `once` in Step 4 |
-| `Inbox.gs` | `dmPollInbox` |
-| `Outbox.gs` | `dmPollOutbox` |
-| `Config.gs`, `Mighty.gs`, `HubSpot.gs`, `State.gs` | none (the dropdown shows **No functions**) |
+| [`Auth.gs`](Auth.gs) | `dmCheckCreds`, `dmLogAuthorizeUrl` |
+| [`Setup.gs`](Setup.gs) | `dmWhoAmI`, `dmPeekInbox`, `dmVerifyIdMapping`, `dmConfirmIdMapping`, `dmBaselineInbox`, `dmInstallTriggers`, `dmRemoveTriggers`, `dmStatus`, plus the temporary `once` in Step 4 |
+| [`Inbox.gs`](Inbox.gs) | `dmPollInbox` |
+| [`Outbox.gs`](Outbox.gs) | `dmPollOutbox` |
+| [`Config.gs`](Config.gs), [`Mighty.gs`](Mighty.gs), [`HubSpot.gs`](HubSpot.gs), [`State.gs`](State.gs) | none (the dropdown shows **No functions**) |
 
 ### Step 1: Create the sheet and the Apps Script project
 
@@ -137,11 +137,11 @@ Leave the default tab alone. The script creates its own tabs (`DM Log`,
 This is a **standalone** project, not one opened from the sheet's **Extensions →
 Apps Script** menu. It finds the sheet by the id you copied.
 
-**1c. Turn `Code.gs` into `Config.gs`.**
+**1c. Turn `Code.gs` into [`Config.gs`](Config.gs).**
 1. In the **Files** list, hover over **Code.gs**, click its **⋮** menu, and
    choose **Rename**.
 2. Type `Config` and press **Enter**. The editor adds `.gs` itself, so don't
-   type it. (If you type `Config.gs` you get `Config.gs.gs`.)
+   type it. (If you type [`Config.gs`](Config.gs) you get `Config.gs.gs`.)
 3. Click in the code area, select everything (**Ctrl+A**), and delete it.
 4. Open [`apps-script/dm-sync/Config.gs`](Config.gs) in this repo. On GitHub,
    use the **Copy raw file** button (or **Raw**, then select all). Paste
@@ -164,9 +164,9 @@ Apps Script** menu. It finds the sheet by the id you copied.
 | `Outbox` | [`apps-script/dm-sync/Outbox.gs`](Outbox.gs) |
 | `Setup` | [`apps-script/dm-sync/Setup.gs`](Setup.gs) |
 
-Don't paste anything from `tests/` or this README into Apps Script.
+Don't paste anything from [`tests/`](tests/) or this README into Apps Script.
 
-**1e. Fill in `Config.gs`.** Open **Config.gs** and replace the placeholder
+**1e. Fill in [`Config.gs`](Config.gs).** Open **Config.gs** and replace the placeholder
 values. Keep the quotes.
 
 | Constant | What to put there | Where to find it |
@@ -197,9 +197,9 @@ bar.
 3. Make sure the **Chrome V8 runtime** option is checked (wording may differ).
    New projects have it on by default, and the code needs it.
 
-✅ **Check:** the **Files** list shows exactly eight files: `Config.gs`,
-`Auth.gs`, `Mighty.gs`, `HubSpot.gs`, `State.gs`, `Inbox.gs`, `Outbox.gs`,
-`Setup.gs`. None shows a red error marker, and the title bar doesn't say
+✅ **Check:** the **Files** list shows exactly eight files: [`Config.gs`](Config.gs),
+[`Auth.gs`](Auth.gs), [`Mighty.gs`](Mighty.gs), [`HubSpot.gs`](HubSpot.gs), [`State.gs`](State.gs), [`Inbox.gs`](Inbox.gs), [`Outbox.gs`](Outbox.gs),
+[`Setup.gs`](Setup.gs). None shows a red error marker, and the title bar doesn't say
 **Unsaved changes**.
 
 ### Step 2: Create the HubSpot service key
@@ -474,7 +474,7 @@ For each one:
 > If it's off by one character, HubSpot's search simply returns nothing: replies
 > sit in the property unsent with no error anywhere. If you get it wrong, delete
 > the property and create it again, or change `HS_REPLY_PROP` /
-> `HS_LAST_INBOUND_PROP` in `Config.gs` to match what you created.
+> `HS_LAST_INBOUND_PROP` in [`Config.gs`](Config.gs) to match what you created.
 
 **5c. Check `mn_member_id` exists.** In the same list, search for
 `mn_member_id`. It must be there (a **number** property), and your members'
@@ -554,7 +554,7 @@ confirm the contact is the same person as the Mighty name above it.
 - **`none`** for a row: that member has no contact with their `mn_member_id`.
   Fine for a few; their DMs will go to the **DM Unmatched** tab. If *every* row
   says `none`, `mn_member_id` isn't filled in, or `HS_MEMBER_ID_PROP` in
-  `Config.gs` doesn't match its internal name.
+  [`Config.gs`](Config.gs) doesn't match its internal name.
 - `WARNING: 2+ contacts share mn_member_id ...`: duplicate contacts. Merge them in
   HubSpot.
 
