@@ -403,6 +403,8 @@ Save the file and close the editor.
 npm run check-schema
 ```
 
+Runs [`scripts/check-schema.js`](scripts/check-schema.js).
+
 ✅ **Check:** it prints `Schema OK: every field this repo uses is present.`
 
 | If you see | Fix |
@@ -425,6 +427,8 @@ whoever your normal browser is signed in as.
 ```powershell
 npm run authorize
 ```
+
+Runs [`scripts/authorize.js`](scripts/authorize.js).
 
 It prints:
 
@@ -494,6 +498,8 @@ Run:
 npm run whoami
 ```
 
+Runs [`scripts/whoami.js`](scripts/whoami.js).
+
 ```text
 Sending as:   Community Team
 GlobalID:     TWVtYmVyOjEyMzQ1
@@ -522,6 +528,8 @@ Messaging yourself is skipped (`SKIPPED_SELF_MESSAGE`).
 ```powershell
 npm run send -- --to test-member@example.com --text "Testing the DM integration.\nLine two."
 ```
+
+Runs [`scripts/send-dm.js`](scripts/send-dm.js).
 
 (The `--` after `npm run send` is needed so npm passes the flags to the script.
 Type `\n` literally; the script turns it into a line break.)
@@ -602,6 +610,8 @@ Hi {{first_name}}, it's been a little while since we've seen you in the communit
 ```powershell
 npm run send-batch -- --csv recipients.csv --template-file message.txt
 ```
+
+Runs [`scripts/send-batch.js`](scripts/send-batch.js).
 
 ```text
 DRY RUN as Community Team: 3 rows, 0 already sent per send-log.csv
@@ -688,6 +698,8 @@ const result = await sendDirectMessage(request, [member.id], 'Hi Alex!');
 // { status: 'sent', outcome: 'SENT', conversationId, messageId, sentAt }
 // { status: 'skipped', outcome: 'SKIPPED_RECIPIENT_CHAT_DISABLED', reason: 'Recipient has turned off private chat' }
 ```
+
+The imports are [`src/config.js`](src/config.js), [`src/graphql-client.js`](src/graphql-client.js) and [`src/direct-messages.js`](src/direct-messages.js).
 
 `createClient` accepts a `tokenStore: { load(), save(tokens) }` if you'd rather
 keep tokens in a database or secret manager than in `.tokens.json`. Persist
@@ -789,6 +801,8 @@ token must be saved, and an auth failure must stop a batch.
 npm run check-schema
 ```
 
+Runs [`scripts/check-schema.js`](scripts/check-schema.js).
+
 Downloads your Network's public schema (no token) and confirms every type,
 field and enum value this repo uses still exists. Run it before a large send.
 
@@ -802,7 +816,7 @@ field and enum value this repo uses still exists. Run it before a large send.
 - **`send-log.csv` and your recipient CSVs contain member emails.** They're
   gitignored; treat them as personal data.
 - Keep the Client Secret in `.env` (gitignored) or a secret manager.
-- `authorize.js` checks the OAuth `state` value on the redirect and uses PKCE, so
+- [`authorize.js`](scripts/authorize.js) checks the OAuth `state` value on the redirect and uses PKCE, so
   a forged redirect can't plant someone else's token.
 - To cut access: revoke the token at `/oauth/revoke`, remove the app under
   **Connected Apps** in the sending account's settings, or delete the OAuth
